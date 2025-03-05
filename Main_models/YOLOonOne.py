@@ -2,7 +2,7 @@ import cv2
 from ultralytics import YOLO
 
 # Load YOLO model
-model = YOLO("StereoVision_YOLODepth\yolov8n.pt")
+model = YOLO("yolov8n.pt")
 # model.to('cuda')  # Run YOLO on GPU
 model.to('cpu')  # Run YOLO on CPU
 
