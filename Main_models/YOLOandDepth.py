@@ -7,8 +7,9 @@ import numpy as np
 from ultralytics import YOLO
 
 # Load YOLO model
-model = YOLO("yolov8n.pt")
+model = YOLO("StereoVision_YOLODepth\yolov8n.pt")
 model.to('cuda')  # Run YOLO on GPU
+# model.to('cpu')  # Run YOLO on CPU
 
 # Open both cameras (Left = Camera 0, Right = Camera 1)
 cap_left = cv2.VideoCapture(0)

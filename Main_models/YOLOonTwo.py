@@ -2,8 +2,9 @@ import cv2
 from ultralytics import YOLO
 
 # Load YOLO model
-model = YOLO("yolov8n.pt")
+model = YOLO("StereoVision_YOLODepth\yolov8n.pt")
 model.to('cuda')  # Run YOLO on GPU
+# model.to('cpu')  # Run YOLO on CPU
 
 # Open both cameras (change index if needed)
 cap1 = cv2.VideoCapture(0)  # Laptop camera
