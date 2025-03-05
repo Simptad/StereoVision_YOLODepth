@@ -1,0 +1,7 @@
+
+
+train: datasets\pallets\images\train
+val: datasets\pallets\images\val
+
+nc: 1  # number of classes
+names: ['pallet']
