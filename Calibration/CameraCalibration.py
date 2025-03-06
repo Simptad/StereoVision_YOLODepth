@@ -11,11 +11,11 @@ objp = np.zeros((CHECKERBOARD[0] * CHECKERBOARD[1], 3), np.float32)
 objp[:, :2] = np.mgrid[0:CHECKERBOARD[0], 0:CHECKERBOARD[1]].T.reshape(-1, 2) * square_size
 
 # Arrays to store object and image points
-objpoints = []
-imgpointsL = []
-imgpointsR = []
+objpoints = []  # 3D points in real world
+imgpointsL = []  # 2D points for left camera
+imgpointsR = []  # 2D points for right camera
 
-# Load calibration images. Make sure to have the same number of images for both cameras, and atleast 20 pictures.
+# Load calibration images
 left_images = glob.glob("left/*.jpg")   # Folder with left camera images
 right_images = glob.glob("right/*.jpg") # Folder with right camera images
 
@@ -34,13 +34,32 @@ for left_img, right_img in zip(left_images, right_images):
         imgpointsL.append(cornersL)
         imgpointsR.append(cornersR)
 
-# Calibrate cameras
-retL, mtxL, distL, _, _ = cv2.calibrateCamera(objpoints, imgpointsL, grayL.shape[::-1], None, None)
-retR, mtxR, distR, _, _ = cv2.calibrateCamera(objpoints, imgpointsR, grayR.shape[::-1], None, None)
+# Calibrate individual cameras
+retL, mtxL, distL, rvecsL, tvecsL = cv2.calibrateCamera(objpoints, imgpointsL, grayL.shape[::-1], None, None)
+retR, mtxR, distR, rvecsR, tvecsR = cv2.calibrateCamera(objpoints, imgpointsR, grayR.shape[::-1], None, None)
 
-# Get the focal length in pixels. In this case, for the left camera (assuming both cameras are identical).
-FOCAL_LENGTH = mtxL[0, 0]
+# Stereo Calibration: Compute rotation (R) and translation (T) between cameras
+flags = cv2.CALIB_FIX_INTRINSIC  # Keep individual calibration fixed
+retS, _, _, _, _, R, T, E, F = cv2.stereoCalibrate(
+    objpoints, imgpointsL, imgpointsR,
+    mtxL, distL, mtxR, distR,
+    grayL.shape[::-1],
+    criteria=(cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 1e-6),
+    flags=flags
+)
+
+# Stereo Rectification (Aligns both camera images to same plane)
+R1, R2, P1, P2, Q, roiL, roiR = cv2.stereoRectify(
+    mtxL, distL, mtxR, distR,
+    grayL.shape[::-1], R, T,
+    flags=cv2.CALIB_ZERO_DISPARITY, alpha=0.9
+)
 
 # Save calibration results
-np.savez("stereo_calibration.npz", mtxL=mtxL, distL=distL, mtxR=mtxR, distR=distR, FOCAL_LENGTH=FOCAL_LENGTH)
-print("Calibration done! Results saved.")
+np.savez("stereo_calibration.npz",
+         mtxL=mtxL, distL=distL, 
+         mtxR=mtxR, distR=distR,
+         R=R, T=T, E=E, F=F,
+         R1=R1, R2=R2, P1=P1, P2=P2, Q=Q)
+
+print("Stereo Calibration done! Results saved.")
