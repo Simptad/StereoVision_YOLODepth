@@ -2,33 +2,36 @@ import cv2
 import numpy as np
 import glob
 
-# Set checkerboard size
-CHECKERBOARD = (9, 6)  # Adjust based on your pattern
-square_size = 2.5  # Size of one square in cm
+## ------ Input parameters ------ ##
+# Real world dimensions of the checkerboard pattern
+CHECKERBOARD = (9, 6)   # Number of corners
+square_size = 2.5       # Size of one square in cm
+left_images = glob.glob("left/*.jpg")   # Left camera images
+right_images = glob.glob("right/*.jpg") # Right camera images
+# ------------------------------------#
 
+## --- Preparing empty lists to store object points and image points from all images --- ##
 # Prepare object points
 objp = np.zeros((CHECKERBOARD[0] * CHECKERBOARD[1], 3), np.float32)
 objp[:, :2] = np.mgrid[0:CHECKERBOARD[0], 0:CHECKERBOARD[1]].T.reshape(-1, 2) * square_size
+objpoints = []      # 3D points in real world
+imgpointsL = []     # 2D points for left camera
+imgpointsR = []     # 2D points for right camera
+# -----------------------------------------------------------------------------------------#
 
-# Arrays to store object and image points
-objpoints = []  # 3D points in real world
-imgpointsL = []  # 2D points for left camera
-imgpointsR = []  # 2D points for right camera
-
-# Load calibration images
-left_images = glob.glob("left/*.jpg")   # Folder with left camera images
-right_images = glob.glob("right/*.jpg") # Folder with right camera images
-
+# Image calibration loop
 for left_img, right_img in zip(left_images, right_images):
+    # This part converts the images to grayscale
     imgL = cv2.imread(left_img)
     imgR = cv2.imread(right_img)
     grayL = cv2.cvtColor(imgL, cv2.COLOR_BGR2GRAY)
     grayR = cv2.cvtColor(imgR, cv2.COLOR_BGR2GRAY)
 
-    # Find chessboard corners
-    retL, cornersL = cv2.findChessboardCorners(grayL, CHECKERBOARD, None)
-    retR, cornersR = cv2.findChessboardCorners(grayR, CHECKERBOARD, None)
+    # Find Checkerboard corners
+    retL, cornersL = cv2.findCheckerboardCorners(grayL, CHECKERBOARD, None)
+    retR, cornersR = cv2.findCheckerboardCorners(grayR, CHECKERBOARD, None)
 
+    # Stores the 2D coordinates if corners are found in both images
     if retL and retR:
         objpoints.append(objp)
         imgpointsL.append(cornersL)
