@@ -19,7 +19,7 @@ cameraL = cv2.VideoCapture(0)  # Left Camera
 cameraR = cv2.VideoCapture(1)  # Right Camera
 
 
-# Set resolution (Modify as needed)
+# Sets the resolution for both cameras
 if cameraL.isOpened():
     cameraL.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     cameraL.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
@@ -85,7 +85,7 @@ while True:
     
     # Press 'spacebar' to redo image and go back to the previous image
     # 32 for spacebar and 8 for backspace
-    elif key == 8:
+    elif key == ord('-'):
         if image_count > 0:
             image_count -= 1
             if os.path.exists(f"Calibration/Calibrationpictures_L/left_{image_count:03d}.jpg"):
