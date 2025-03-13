@@ -1,12 +1,16 @@
 # This script captures simultanously images from two cameras and saves them in folders Calibrationpictures_L/H
 
+# 'Enter" key to capture image
+# 'q' to exit
+# 'r' to redo and go back to the previous image
+
 import cv2
 import os
 
 ## -- User input -- ##
 # Resolution [pixels]
-width = 1920
-height = 1080
+width = 520
+height = 520
 internal_width = 10
 internal_height = 7
 
@@ -53,27 +57,45 @@ while True:
     if frameR is not None:
         cv2.imshow("Right Camera", frameR)
     
-    key = cv2.waitKey(1) & 0xFF
+    key = cv2.waitKey(1) & 0xFF 
     
-    if key == 13:  # Enter key to capture image
+    # Enter key to capture image
+    if key == 13:
         if retL:
             filenameL = f"Calibration/Calibrationpictures_L/left_{image_count:03d}.jpg"
             cv2.imwrite(filenameL, frameL)
             print(f"Captured {filenameL}")
             # Run chessboard corner detection on the captured image
             chessboard_image_L = detect_and_draw_chessboard_corners(frameL, camera_name="Left")
-            cv2.imshow("Chessboard Detection Left", chessboard_image_L)  # Show the result
+            cv2.imshow("Left camera", chessboard_image_L)       # Show the result
+            cv2.setWindowTitle("Left camera", f"{filenameL}")   # Set window title
         if retR:
             filenameR = f"Calibration/Calibrationpictures_H/right_{image_count:03d}.jpg"
             cv2.imwrite(filenameR, frameR)
             print(f"Captured {filenameR}")
             # Run chessboard corner detection on the captured image
             chessboard_image_R = detect_and_draw_chessboard_corners(frameR, camera_name="Right")
-            cv2.imshow("Chessboard Detection Right", chessboard_image_R)  # Show the result
+            cv2.imshow("Right camera", chessboard_image_R)      # Show the result
+            cv2.setWindowTitle("Right camera", f"{filenameR}")  # Set window title
         image_count += 1
-    
-    elif key == ord('q'):  # Press 'q' to exit
+
+    # Press 'q' to exit
+    elif key == ord('q'):
         break
+    
+    # Press 'spacebar' to redo image and go back to the previous image
+    # 32 for spacebar and 8 for backspace
+    elif key == 8:
+        if image_count > 0:
+            image_count -= 1
+            if os.path.exists(f"Calibration/Calibrationpictures_L/left_{image_count:03d}.jpg"):
+                os.remove(f"Calibration/Calibrationpictures_L/left_{image_count:03d}.jpg")
+            if os.path.exists(f"Calibration/Calibrationpictures_H/right_{image_count:03d}.jpg"):
+                os.remove(f"Calibration/Calibrationpictures_H/right_{image_count:03d}.jpg")
+            print(f"Deleted image {image_count:03d}.")
+        else:
+            print("No images to delete.")
+
 
 # Release resources
 if cameraL.isOpened():
