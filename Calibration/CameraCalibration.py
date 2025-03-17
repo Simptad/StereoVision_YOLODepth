@@ -2,12 +2,17 @@ import cv2
 import numpy as np
 import glob
 
-## ------ Input parameters ------ ##
-# Real world dimensions of the checkerboard pattern
-CHECKERBOARD = (9, 6)   # Number of corners
-square_size = 2.5       # Size of one square in cm
-left_images = glob.glob("left/*.jpg")   # Left camera images
-right_images = glob.glob("right/*.jpg") # Right camera images
+## -- Load initial parameters -- ##
+init_data = np.load("Calibration/InitialParameters.npz")
+# CHECKERBOARD = (init_data["internal_width"], init_data["internal_length"])
+CHECKERBOARD = (10, 7)
+BASELINE = init_data["BASELINE"]
+square_size = init_data["square_size"]
+# ------------------------------- ##
+
+## --- Load calibration images --- ##
+left_images = glob.glob("Calibration/Calibrationpictures_L/*.jpg")   # Left camera images
+right_images = glob.glob("Calibration/Calibrationpictures_R/*.jpg") # Right camera images
 # ------------------------------------#
 
 ## --- Preparing empty lists to store object points and image points from all images --- ##
@@ -19,6 +24,7 @@ imgpointsL = []     # 2D points for left camera
 imgpointsR = []     # 2D points for right camera
 # -----------------------------------------------------------------------------------------#
 
+print("\nStarting image calibration....")
 # Image calibration loop
 for left_img, right_img in zip(left_images, right_images):
     # This part converts the images to grayscale
@@ -28,19 +34,23 @@ for left_img, right_img in zip(left_images, right_images):
     grayR = cv2.cvtColor(imgR, cv2.COLOR_BGR2GRAY)
 
     # Find Checkerboard corners
-    retL, cornersL = cv2.findCheckerboardCorners(grayL, CHECKERBOARD, None)
-    retR, cornersR = cv2.findCheckerboardCorners(grayR, CHECKERBOARD, None)
+    retL, cornersL = cv2.findChessboardCorners(grayL, CHECKERBOARD, None)
+    retR, cornersR = cv2.findChessboardCorners(grayR, CHECKERBOARD, None)
 
     # Stores the 2D coordinates if corners are found in both images
     if retL and retR:
         objpoints.append(objp)
         imgpointsL.append(cornersL)
         imgpointsR.append(cornersR)
+print("Done\n")
 
+print("Individual Stereo Calibration....")
 # Calibrate individual cameras
 retL, mtxL, distL, rvecsL, tvecsL = cv2.calibrateCamera(objpoints, imgpointsL, grayL.shape[::-1], None, None)
 retR, mtxR, distR, rvecsR, tvecsR = cv2.calibrateCamera(objpoints, imgpointsR, grayR.shape[::-1], None, None)
+print("Done\n")
 
+print("Computing Rotation and Translation")
 # Stereo Calibration: Compute rotation (R) and translation (T) between cameras
 flags = cv2.CALIB_FIX_INTRINSIC  # Keep individual calibration fixed
 retS, _, _, _, _, R, T, E, F = cv2.stereoCalibrate(
@@ -50,19 +60,41 @@ retS, _, _, _, _, R, T, E, F = cv2.stereoCalibrate(
     criteria=(cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 1e-6),
     flags=flags
 )
+print("Done\n")
 
+print("Computing Stereo Rectification...")
 # Stereo Rectification (Aligns both camera images to same plane)
 R1, R2, P1, P2, Q, roiL, roiR = cv2.stereoRectify(
     mtxL, distL, mtxR, distR,
     grayL.shape[::-1], R, T,
     flags=cv2.CALIB_ZERO_DISPARITY, alpha=0.9
-)
+) 
+print("Done\n")
+
+# Extract focal length from the camera matrix
+FOCAL_LENGTH_L = mtxL[0, 0]
+FOCAL_LENGTH_R = mtxR[0, 0]
+
+# Print the calculated focal lengths
+print(f"Calculated Focal Length (Left Camera): {FOCAL_LENGTH_L} pixels")
+print(f"Calculated Focal Length (Right Camera): {FOCAL_LENGTH_R} pixels\n")
 
 # Save calibration results
-np.savez("stereo_calibration.npz",
+np.savez("Calibration/stereo_calibration.npz",
          mtxL=mtxL, distL=distL, 
          mtxR=mtxR, distR=distR,
          R=R, T=T, E=E, F=F,
-         R1=R1, R2=R2, P1=P1, P2=P2, Q=Q)
+         R1=R1, R2=R2, P1=P1, P2=P2, Q=Q, BASELINE=BASELINE, FOCAL_LENGTH_L=FOCAL_LENGTH_L, FOCAL_LENGTH_R=FOCAL_LENGTH_R)
 
 print("Stereo Calibration done! Results saved.")
+
+## -- Verify calibration -- ##
+print("\nStarting camera verification....")
+reprojection_error_L = cv2.calibrateCamera(objpoints, imgpointsL, grayL.shape[::-1], mtxL, distL, rvecsL, tvecsL)[0]
+reprojection_error_R = cv2.calibrateCamera(objpoints, imgpointsR, grayR.shape[::-1], mtxR, distR, rvecsR, tvecsR)[0]
+stereo_error = retS
+print(f"Reprojection Error (Left Camera): {reprojection_error_L}")
+print(f"Reprojection Error (Right Camera): {reprojection_error_R}")
+print(f"Stereo Calibration Reprojection Error: {stereo_error}")
+print("Done\n")
+
