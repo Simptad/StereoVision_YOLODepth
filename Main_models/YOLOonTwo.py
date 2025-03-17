@@ -3,12 +3,19 @@ from ultralytics import YOLO
 
 # Load YOLO model
 model = YOLO("yolov8n.pt")
-model.to('cuda')  # Run YOLO on GPU
-# model.to('cpu')  # Run YOLO on CPU
+# model.to('cuda')  # Run YOLO on GPU
+model.to('cpu')  # Run YOLO on CPU
 
 # Open both cameras (change index if needed)
-cap1 = cv2.VideoCapture(0)  # Laptop camera
-cap2 = cv2.VideoCapture(1)  # External camera (change index if needed)
+cap1 = cv2.VideoCapture(1, cv2.CAP_DSHOW)  # Laptop camera
+cap2 = cv2.VideoCapture(2, cv2.CAP_DSHOW)  # External camera #1
+
+# Set camera resolution
+cap1.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+cap1.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+cap2.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+cap2.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
 
 while cap1.isOpened() and cap2.isOpened():
     # Read frames from both cameras
