@@ -34,8 +34,12 @@ for left_img, right_img in zip(left_images, right_images):
     grayR = cv2.cvtColor(imgR, cv2.COLOR_BGR2GRAY)
 
     # Find Checkerboard corners
-    retL, cornersL = cv2.findChessboardCorners(grayL, CHECKERBOARD, None)
-    retR, cornersR = cv2.findChessboardCorners(grayR, CHECKERBOARD, None)
+    # retL, cornersL = cv2.findChessboardCorners(grayL, CHECKERBOARD, None)
+    # retR, cornersR = cv2.findChessboardCorners(grayR, CHECKERBOARD, None)
+
+    # Better chessboard corner detection using SB
+    retL, cornersL = cv2.findChessboardCornersSB(grayL, CHECKERBOARD, None)
+    retR, cornersR = cv2.findChessboardCornersSB(grayR, CHECKERBOARD, None)
 
     # Stores the 2D coordinates if corners are found in both images
     if retL and retR:
