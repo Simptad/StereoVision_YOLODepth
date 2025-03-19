@@ -5,11 +5,16 @@
 import cv2
 import numpy as np
 from ultralytics import YOLO
-import logging 
+import logging
+import time
+import matplotlib.pyplot as plt
 
-# Set camera resolution
-width = 720
-height = 720
+## -- Manual Input Parameters -- ##
+width = 1080; height = width
+fps = 30
+processor = 'CPU'       # 'CPU' or 'GPU'
+scale_factor = 2      # Scale factor for depth calculation
+# ------------------------- ##
 
 # Suppress YOLO console output
 logging.disable(logging.CRITICAL)
@@ -20,14 +25,17 @@ calib_data = np.load("Calibration/stereo_calibration.npz")
 mtxL, distL, mtxR, distR = calib_data["mtxL"], calib_data["distL"], calib_data["mtxR"], calib_data["distR"]
 FOCAL_LENGTH_L, FOCAL_LENGTH_R = calib_data["FOCAL_LENGTH_L"], calib_data["FOCAL_LENGTH_R"]
 BASELINE = calib_data["BASELINE"]
+mapL1, mapL2 = calib_data["mapL1"], calib_data["mapL2"]
+mapR1, mapR2 = calib_data["mapR1"], calib_data["mapR2"]
 # --------------------------------- ##
 
 ## -- Load YOLO model. Comment/Uncomment to use GPU or CPU -- ##
 model = YOLO("yolov8n.pt")
-# model.to('cuda')  # Run YOLO on GPU
-model.to('cpu')  # Run YOLO on CPU
-device = 'GPU' if model.device.type == 'cuda' else 'CPU'
-print(f"\nYOLO.v8 on {device}")
+if processor == 'GPU':
+    model.to('cuda')  # Run YOLO on GPU
+else:
+    model.to('cpu')  # Run YOLO on CPU
+print(f"\nYOLO.v8 on {processor} at {fps} FPS")
 # ----------------------------------------------------------- ##
 
 
@@ -39,14 +47,13 @@ cap_right = cv2.VideoCapture(2, cv2.CAP_DSHOW)
 print("Right camera initialized.\n")
 # ---------------------------- ##
 
-## -- Increase the brightness of the cameras -- ##
-brightness_value = 180  # (0-255)
+## -- Camera settings -- ##
+# Set camera brightness
+brightness_value = 150  # (0-255)
 cap_left.set(cv2.CAP_PROP_BRIGHTNESS, brightness_value)
 cap_right.set(cv2.CAP_PROP_BRIGHTNESS, brightness_value)
 print(f"Camera brightness set to {brightness_value}")
-# ------------------------------ ##
-
-## -- Set camera resolution -- ##
+# Set camera resolution
 cap_left.set(cv2.CAP_PROP_FRAME_WIDTH, width)
 cap_left.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
 cap_right.set(cv2.CAP_PROP_FRAME_WIDTH, width)
@@ -57,7 +64,7 @@ print(f"Camera resolution set to {width} x {height}")
 # Create stereo depth matcher
 # stereo = cv2.StereoBM_create(numDisparities=16*12, blockSize=11) # StereoBM (default)
 # Using StereoSGBM for better results
-blockSize = 7
+blockSize = 5
 P1 = 8*3*blockSize**2
 P2 = 32*3*blockSize**2
 stereo = cv2.StereoSGBM_create(
@@ -72,8 +79,10 @@ stereo = cv2.StereoSGBM_create(
     P2=P2
 )
 
-
+frame_time = 1/fps
 while cap_left.isOpened() and cap_right.isOpened():
+    start_time = time.time()
+
     ret_left, frame_left = cap_left.read()
     ret_right, frame_right = cap_right.read()
 
@@ -90,8 +99,12 @@ while cap_left.isOpened() and cap_right.isOpened():
     gray_right = cv2.cvtColor(frame_right, cv2.COLOR_BGR2GRAY)
 
     # Apply Histogram Equalization
-    gray_left = cv2.equalizeHist(gray_left)
-    gray_right = cv2.equalizeHist(gray_right)
+    # gray_left = cv2.equalizeHist(gray_left)
+    # gray_right = cv2.equalizeHist(gray_right)
+
+    # Apply rectification
+    frame_left_rect = cv2.remap(frame_left, mapL1, mapL2, cv2.INTER_LINEAR)
+    frame_right_rect = cv2.remap(frame_right, mapR1, mapR2, cv2.INTER_LINEAR)
 
     # Compute depth map, Fix invalid disparities
     disparity = stereo.compute(gray_left, gray_right).astype(np.float32) / 16.0  # Normalize disparity
@@ -103,7 +116,7 @@ while cap_left.isOpened() and cap_right.isOpened():
     # Run YOLO detections on both cameras
     results_left = model(frame_left)
     results_right = model(frame_right)
-    confidence_threshold = 0.75
+    confidence_threshold = 0.6
 
     # Process detections
     for result in results_left:
@@ -133,21 +146,41 @@ while cap_left.isOpened() and cap_right.isOpened():
 
                 # If the object is present in both cameras, compute disparity and depth
                 disparity_value = disparity[center_y_left, center_x_left]  # Get disparity value from left camera position
+
+
+                # Use Median Filtering for Disparity
+                window_size = 20
+                half_window = window_size // 2
+                
+                if (center_y_left - half_window >= 0 and center_y_left + half_window < disparity.shape[0] and 
+                    center_x_left - half_window >= 0 and center_x_left + half_window < disparity.shape[1]):
+
+                    region = disparity[center_y_left - half_window:center_y_left + half_window + 1,
+                                       center_x_left - half_window:center_x_left + half_window + 1]
+                    disparity_value = np.median(region)  # Median filtering
+                else:
+                    disparity_value = disparity[center_y_left, center_x_left]  # Fallback
+
+                # Compute depth, filter invalid values
+                if disparity_value >= 1:
+                    depth_cm = (FOCAL_LENGTH_L * BASELINE) / disparity_value
+                    depth_m = depth_cm / 100  # Convert to meters
+                else:
+                    depth_m = None  # Invalid depth
+
                 if 0 < disparity_value < 255:
-                    depth_cm = (FOCAL_LENGTH_L * BASELINE) / (disparity_value*2)
+                    depth_cm = (FOCAL_LENGTH_L * BASELINE) / (disparity_value*scale_factor)
                     depth_m = depth_cm / 100  # Convert depth to meters
-                    if depth_m < 10:
-                        # Draw bounding box and label with depth
+                    print(f"Disparity: {disparity_value}, Depth: {depth_m:.2f}m")
+                    # Draw bounding box & label
+                    if depth_m and depth_m < 10:  # Display only reasonable depths
                         cv2.rectangle(frame_left, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                        cv2.putText(frame_left, f"{label}, {depth_m:.2f}m", 
-                                    (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 
-                                    0.5, (0, 255, 0), 2)
+                        cv2.putText(frame_left, f"{label}, {depth_m:.2f}m",
+                                    (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
                     else:
-                        # Do not display any depth value if disparity is invalid
                         cv2.rectangle(frame_left, (x1, y1), (x2, y2), (0, 255, 255), 2)
-                        cv2.putText(frame_left, f"{label}, Invalid Depth", 
-                                    (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 
-                                    0.5, (0, 255, 255), 2)
+                        cv2.putText(frame_left, f"{label}, Invalid Depth",
+                                    (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
             else:
                 # Do not display any depth value if disparity is invalid
                 cv2.rectangle(frame_left, (x1, y1), (x2, y2), (0, 0, 255), 2)
@@ -158,18 +191,18 @@ while cap_left.isOpened() and cap_right.isOpened():
     # Show images
     cv2.imshow("Left Camera - YOLO + Depth", frame_left)
     cv2.imshow("Right Camera", frame_right)
-    cv2.imshow("Depth Map", cv2.normalize(disparity, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U))
-    # cv2.imshow("Rectified Left", frame_left_rect)
-    # cv2.imshow("Rectified Right", frame_right_rect)
-
+    cv2.imshow("Disparity Map", cv2.applyColorMap(cv2.normalize(disparity, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U), cv2.COLORMAP_JET))
 
     # Exit on 'q' key
     if cv2.waitKey(1) & 0xFF == ord('q'):
         print("\nExiting...")
         break
 
+    elapsed_time = time.time() - start_time
+    if elapsed_time < frame_time:
+        time.sleep(frame_time - elapsed_time)
+
 # Cleanup
 cap_left.release()
 cap_right.release()
 cv2.destroyAllWindows()
-
