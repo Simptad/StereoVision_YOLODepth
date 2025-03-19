@@ -10,11 +10,13 @@ import time
 import matplotlib.pyplot as plt
 
 ## -- Manual Input Parameters -- ##
-width = 1080; height = width
-fps = 30
-processor = 'CPU'       # 'CPU' or 'GPU'
-scale_factor = 2      # Scale factor for depth calculation
-# ------------------------- ##
+width = 720; height = width
+fps = 60
+processor = 'CPU'           # 'CPU' or 'GPU'
+scale_factor = 2.2          # Scale factor for depth calculation
+smoothing_factor = 1.0      # Smoothing factor for depth values
+window_size = 8             # Window size for median filtering
+# ------------------------ ##
 
 # Suppress YOLO console output
 logging.disable(logging.CRITICAL)
@@ -38,6 +40,10 @@ else:
 print(f"\nYOLO.v8 on {processor} at {fps} FPS")
 # ----------------------------------------------------------- ##
 
+## -- Initialize a variable to store smoothed depth values for each object -- ##
+smoothed_depths = {}
+object_data = {}
+# --------------------------------- ##
 
 ## -- Initialzing cameras -- ##
 print("Initializing cameras...")
@@ -79,6 +85,32 @@ stereo = cv2.StereoSGBM_create(
     P2=P2
 )
 
+def draw_objects_on_frame(frame, object_data):
+    for obj_id, data in object_data.items():
+        x1, y1, x2, y2 = data["bbox"]
+        label = data["label"]
+        depth = data["depth"]
+
+        # Color logic based on depth
+        if depth is None:  
+            color = (0, 0, 255)  # Red for single-camera detection (no depth)
+            text_color = (0, 0, 255)
+            text = f"{label}"  # No depth shown
+        elif depth < 10:
+            color = (0, 255, 0)  # Green for depth < 10m
+            text_color = (0, 0, 0)  # Black text
+            text = f"{label} ({depth:.2f}m)"
+        else:
+            color = (0, 255, 255)  # Yellow for depth >= 10m
+            text_color = (0, 0, 0)  # Black text
+            text = f"{label} ({depth:.2f}m)"
+
+        # Draw bounding box, label and depth
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+        cv2.putText(frame, text, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 2, cv2.LINE_AA)
+    return frame
+
+
 frame_time = 1/fps
 while cap_left.isOpened() and cap_right.isOpened():
     start_time = time.time()
@@ -99,19 +131,11 @@ while cap_left.isOpened() and cap_right.isOpened():
     gray_right = cv2.cvtColor(frame_right, cv2.COLOR_BGR2GRAY)
 
     # Apply Histogram Equalization
-    # gray_left = cv2.equalizeHist(gray_left)
-    # gray_right = cv2.equalizeHist(gray_right)
-
-    # Apply rectification
-    frame_left_rect = cv2.remap(frame_left, mapL1, mapL2, cv2.INTER_LINEAR)
-    frame_right_rect = cv2.remap(frame_right, mapR1, mapR2, cv2.INTER_LINEAR)
+    gray_left = cv2.equalizeHist(gray_left)
+    gray_right = cv2.equalizeHist(gray_right)
 
     # Compute depth map, Fix invalid disparities
     disparity = stereo.compute(gray_left, gray_right).astype(np.float32) / 16.0  # Normalize disparity
-    disparity[disparity < 0] = 0.1
-    # Apply Median and Gaussian Blur for Smoother Disparity
-    disparity = cv2.medianBlur(disparity, 5)  # Reduce high-frequency noise
-    disparity = cv2.GaussianBlur(disparity, (5,5), 0)  # Smooth sharp jumps
 
     # Run YOLO detections on both cameras
     results_left = model(frame_left)
@@ -127,29 +151,29 @@ while cap_left.isOpened() and cap_right.isOpened():
             x1, y1, x2, y2 = map(int, box.xyxy[0])  # Get bounding box
             label = f"{model.names[int(box.cls[0])]} {box.conf[0]:.2f}"
 
+            object_id = int(box.cls[0])
+            current_time = time.time()
             # Check if the object is visible in the right camera (by checking for a similar bounding box)
             corresponding_box_right = None
             for result_right in results_right:
                 for box_right in result_right.boxes:
+
                     # Check if the object in the right camera corresponds to the object in the left camera
-                    if box.cls[0] == box_right.cls[0]:
-                        # You can further refine this by comparing position or overlap, for now, we check class
+                    if box.cls[0] == box_right.cls[0]:  # Match based on class only
                         corresponding_box_right = box_right
                         break
+                if corresponding_box_right is not None:
+                    break
 
             # If a corresponding object was found in both cameras, calculate depth
             if corresponding_box_right is not None:
                 center_x_left = (x1 + x2) // 2
-                center_y_left = (y1 + y2) // 2
-                center_x_right = (int(corresponding_box_right.xyxy[0][0]) + int(corresponding_box_right.xyxy[0][2])) // 2
-                center_y_right = (int(corresponding_box_right.xyxy[0][1]) + int(corresponding_box_right.xyxy[0][3])) // 2
+                center_y_left = (y1 + y2) // 2  
 
                 # If the object is present in both cameras, compute disparity and depth
                 disparity_value = disparity[center_y_left, center_x_left]  # Get disparity value from left camera position
 
-
-                # Use Median Filtering for Disparity
-                window_size = 20
+                # Use Median Filtering for Disparity 
                 half_window = window_size // 2
                 
                 if (center_y_left - half_window >= 0 and center_y_left + half_window < disparity.shape[0] and 
@@ -161,37 +185,53 @@ while cap_left.isOpened() and cap_right.isOpened():
                 else:
                     disparity_value = disparity[center_y_left, center_x_left]  # Fallback
 
-                # Compute depth, filter invalid values
-                if disparity_value >= 1:
-                    depth_cm = (FOCAL_LENGTH_L * BASELINE) / disparity_value
-                    depth_m = depth_cm / 100  # Convert to meters
-                else:
-                    depth_m = None  # Invalid depth
-
                 if 0 < disparity_value < 255:
                     depth_cm = (FOCAL_LENGTH_L * BASELINE) / (disparity_value*scale_factor)
                     depth_m = depth_cm / 100  # Convert depth to meters
-                    print(f"Disparity: {disparity_value}, Depth: {depth_m:.2f}m")
-                    # Draw bounding box & label
-                    if depth_m and depth_m < 10:  # Display only reasonable depths
-                        cv2.rectangle(frame_left, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                        cv2.putText(frame_left, f"{label}, {depth_m:.2f}m",
-                                    (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+
+                    # Apply Exponential Moving Average (EMA) for smoothing
+                    if object_id in smoothed_depths:
+                        smoothed_depths[object_id] = (smoothing_factor*depth_m) + (1-smoothing_factor) * smoothed_depths[object_id]
                     else:
-                        cv2.rectangle(frame_left, (x1, y1), (x2, y2), (0, 255, 255), 2)
-                        cv2.putText(frame_left, f"{label}, Invalid Depth",
-                                    (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+                        smoothed_depths[object_id] = depth_m
+                    
+                    depth_m = smoothed_depths[object_id]
+
+
+                    # Ensure object_data is updated safely
+                    if object_id in object_data:
+                        object_data[object_id].update({
+                            "bbox": (x1, y1, x2, y2),
+                            "depth": depth_m,
+                            "label": label,
+                            "last_seen": current_time  # Ensure 'last_seen' is always updated
+                        })
+                    else:
+                        object_data[object_id] = {
+                            "bbox": (x1, y1, x2, y2),
+                            "depth": depth_m,
+                            "label": label,
+                            "last_seen": current_time  # Ensure 'last_seen' is initialized
+                        }
             else:
                 # Do not display any depth value if disparity is invalid
                 cv2.rectangle(frame_left, (x1, y1), (x2, y2), (0, 0, 255), 2)
                 cv2.putText(frame_left, f"{label}", 
                             (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 
                             0.5, (0, 0, 255), 2)
-    
+
+
+    # Remove stale objects safely at the end of the loop
+    object_data = {obj_id: data for obj_id, data in object_data.items() if "last_seen" in data and current_time - data["last_seen"] < 1.0}
+        
+    # Draw bounding boxes and depth info
+    frame_left = draw_objects_on_frame(frame_left, object_data)
+
     # Show images
     cv2.imshow("Left Camera - YOLO + Depth", frame_left)
-    cv2.imshow("Right Camera", frame_right)
+    # cv2.imshow("Right Camera", frame_right)
     cv2.imshow("Disparity Map", cv2.applyColorMap(cv2.normalize(disparity, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U), cv2.COLORMAP_JET))
+
 
     # Exit on 'q' key
     if cv2.waitKey(1) & 0xFF == ord('q'):
