@@ -86,7 +86,7 @@ print("Computing Stereo Rectification...")
 R1, R2, P1, P2, Q, roiL, roiR = cv2.stereoRectify(
     mtxL, distL, mtxR, distR,
     grayL.shape[::-1], R, T,
-    flags=cv2.CALIB_ZERO_DISPARITY, alpha=0.9
+    flags=cv2.CALIB_ZERO_DISPARITY, alpha=0
 ) 
 print("Done\n")
 
