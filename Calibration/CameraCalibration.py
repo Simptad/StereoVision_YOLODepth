@@ -24,6 +24,7 @@ imgpointsL = []     # 2D points for left camera
 imgpointsR = []     # 2D points for right camera
 # -----------------------------------------------------------------------------------------#
 
+denied_images = 0; proccessed_images = 0
 print("\nStarting image calibration....")
 # Image calibration loop
 for left_img, right_img in zip(left_images, right_images):
@@ -32,6 +33,14 @@ for left_img, right_img in zip(left_images, right_images):
     imgR = cv2.imread(right_img)
     grayL = cv2.cvtColor(imgL, cv2.COLOR_BGR2GRAY)
     grayR = cv2.cvtColor(imgR, cv2.COLOR_BGR2GRAY)
+
+    # # Optionally apply histogram equalization to enhance contrast
+    # grayL = cv2.equalizeHist(grayL)
+    # grayR = cv2.equalizeHist(grayR)
+
+    # # Optionally apply Gaussian Blur to smooth the image and reduce noise
+    # grayL = cv2.GaussianBlur(grayL, (5, 5), 0)
+    # grayR = cv2.GaussianBlur(grayR, (5, 5), 0)
 
     # Find Checkerboard corners
     # retL, cornersL = cv2.findChessboardCorners(grayL, CHECKERBOARD, None)
@@ -46,15 +55,21 @@ for left_img, right_img in zip(left_images, right_images):
         objpoints.append(objp)
         imgpointsL.append(cornersL)
         imgpointsR.append(cornersR)
+        print(f"Image {proccessed_images+denied_images} Processed.")
+        proccessed_images += 1
+    else:
+        print(f"Image {proccessed_images+denied_images} Denied.")
+        denied_images += 1
+    
 print("Done\n")
 
-print("Individual Stereo Calibration....")
+print("Individual Stereo Calibration...")
 # Calibrate individual cameras
 retL, mtxL, distL, rvecsL, tvecsL = cv2.calibrateCamera(objpoints, imgpointsL, grayL.shape[::-1], None, None)
 retR, mtxR, distR, rvecsR, tvecsR = cv2.calibrateCamera(objpoints, imgpointsR, grayR.shape[::-1], None, None)
 print("Done\n")
 
-print("Computing Rotation and Translation")
+print("Computing Rotation and Translation...")
 # Stereo Calibration: Compute rotation (R) and translation (T) between cameras
 flags = cv2.CALIB_FIX_INTRINSIC  # Keep individual calibration fixed
 retS, _, _, _, _, R, T, E, F = cv2.stereoCalibrate(
@@ -75,6 +90,10 @@ R1, R2, P1, P2, Q, roiL, roiR = cv2.stereoRectify(
 ) 
 print("Done\n")
 
+# Compute rectification maps
+mapL1, mapL2 = cv2.initUndistortRectifyMap(mtxL, distL, R1, P1, grayL.shape[::-1], cv2.CV_16SC2)
+mapR1, mapR2 = cv2.initUndistortRectifyMap(mtxR, distR, R2, P2, grayR.shape[::-1], cv2.CV_16SC2)
+
 # Extract focal length from the camera matrix
 FOCAL_LENGTH_L = mtxL[0, 0]
 FOCAL_LENGTH_R = mtxR[0, 0]
@@ -88,9 +107,16 @@ np.savez("Calibration/stereo_calibration.npz",
          mtxL=mtxL, distL=distL, 
          mtxR=mtxR, distR=distR,
          R=R, T=T, E=E, F=F,
-         R1=R1, R2=R2, P1=P1, P2=P2, Q=Q, BASELINE=BASELINE, FOCAL_LENGTH_L=FOCAL_LENGTH_L, FOCAL_LENGTH_R=FOCAL_LENGTH_R)
+         R1=R1, R2=R2, P1=P1, P2=P2, Q=Q, 
+         BASELINE=BASELINE, 
+         FOCAL_LENGTH_L=FOCAL_LENGTH_L, 
+         FOCAL_LENGTH_R=FOCAL_LENGTH_R,
+         mapL1=mapL1, mapL2=mapL2,
+         mapR1=mapR1, mapR2=mapR2
+)
 
 print("Stereo Calibration done! Results saved.")
+print(f"Total images processed/denied: {proccessed_images}/{denied_images} ({proccessed_images+denied_images})")
 
 ## -- Verify calibration -- ##
 print("\nStarting camera verification....")
