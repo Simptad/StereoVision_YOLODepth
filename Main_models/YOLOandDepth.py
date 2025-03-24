@@ -221,32 +221,6 @@ while cap_left.isOpened() and cap_right.isOpened():
                 bbox = (x1, y1, x2, y2)
                 depth = calculate_depth(disparity, bbox, FOCAL_LENGTH_L, BASELINE, scale_factor, smoothing_factor, smoothed_depths, object_id)
 
-                # center_x_left = (x1 + x2) // 2
-                # center_y_left = (y1 + y2) // 2  
-
-                # # Use Median Filtering for Disparity 
-                # half_window = window_size // 2
-                
-                # if (center_y_left - half_window >= 0 and center_y_left + half_window < disparity.shape[0] and 
-                #     center_x_left - half_window >= 0 and center_x_left + half_window < disparity.shape[1]):
-
-                #     region = disparity[center_y_left - half_window:center_y_left + half_window + 1,
-                #                        center_x_left - half_window:center_x_left + half_window + 1]
-                #     disparity_value = np.median(region)  # Median filtering
-                # else:
-                #     disparity_value = disparity[center_y_left, center_x_left]  # Fallback
-
-                # if 0 < disparity_value < 255:
-                #     depth = (FOCAL_LENGTH_L * BASELINE) / (disparity_value * scale_factor) / 100
-
-                #     # Apply Exponential Moving Average (EMA) for smoothing
-                #     if object_id in smoothed_depths:
-                #         smoothed_depths[object_id] = (smoothing_factor*depth) + (1-smoothing_factor) * smoothed_depths[object_id]
-                #     else:
-                #         smoothed_depths[object_id] = depth
-                    
-                #     depth = smoothed_depths[object_id]
-
                 # Ensure object_data is updated safely
                 if object_id in object_data:
                     object_data[object_id].update({
@@ -283,7 +257,6 @@ while cap_left.isOpened() and cap_right.isOpened():
     if elapsed_time < frame_time:
         time.sleep(frame_time - elapsed_time)
 
-# Cleanup
 cap_left.release()
 cap_right.release()
 cv2.destroyAllWindows()
