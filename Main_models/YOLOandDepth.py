@@ -52,7 +52,6 @@ print(f"\nYOLO.v8 on {processor} at {fps} FPS")
 smoothed_depths = {}
 object_data = {}
 detected_objects = {}
-# sampled_points = {}
 # --------------------------------- ##
 
 ## -- Initialzing cameras -- ##
@@ -129,7 +128,6 @@ def draw_objects_on_frame(frame, object_data):
         # Draw depth text to the left and right of the circle
         cv2.putText(frame, depth_text, (center_x - 60, center_y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 2, cv2.LINE_AA)   # Black text to the left
         cv2.putText(frame, depth_text, (center_x + 10, center_y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)  # White text to the right
-
     return frame
 
 import random
