@@ -1,13 +1,13 @@
 import matplotlib.pyplot as plt
 
 # Filepath to the DepthAccuracy.txt file
-file_path = r"c:\Users\SESITAD1\Desktop\StereoVision_YOLODepth\Validation\DepthAccuracy.txt"
+file_path = r"Validation\DepthAccuracy.txt"
 
-# Initialize variables
+# Empty lists
 scaling_factors = []
 data = {}
 
-# Read and parse the file
+# Read the file
 with open(file_path, 'r') as file:
     lines = file.readlines()
     current_scaling_factor = None
@@ -25,7 +25,7 @@ with open(file_path, 'r') as file:
             data[current_scaling_factor]["x"].append(x)
             data[current_scaling_factor]["y"].append(y)
 
-# Plot the data
+## --- Plot the data --- ##
 plt.figure(figsize=(10, 6))
 for scaling_factor, points in data.items():
     plt.plot(points["x"], points["y"], marker='o', label=scaling_factor)
@@ -38,8 +38,10 @@ plt.ylabel("Measured Depth (meters)")
 plt.title("Depth Accuracy for Different Scaling Factors")
 plt.legend(title="Scaling Factors")
 plt.grid(True)
+plt.savefig("Validation/DepthCheck.png")     # Save image
 
-# Plot the difference (y - x)
+
+## ---  Plot the difference (y - x) --- ##
 plt.figure(figsize=(10, 6))
 
 # Plot the difference for each scaling factor
@@ -56,4 +58,6 @@ plt.ylabel("Difference (Measured Depth - Real Distance) (meters)")
 plt.title("Difference Between Measured Depth and Real Distance")
 plt.legend(title="Scaling Factors")
 plt.grid(True)
+plt.savefig("Validation/DepthAccuracy.png")     # Save image
 plt.show()
+
