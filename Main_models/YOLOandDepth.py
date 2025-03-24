@@ -10,14 +10,20 @@ import time
 import matplotlib.pyplot as plt
 
 ## -- Manual Input Parameters -- ##
-width = 720; height = width
-fps = 60
-processor = 'CPU'           # 'CPU' or 'GPU'
-scale_factor = 2.2          # Scale factor for depth calculation
+# General settings
+processor = 'GPU'           # 'CPU' or 'GPU'
+fps = 30
+# Camera settings
+brightness_value = 120      # (0-255)
+width = 1080; height = width
+# Depth calculation parameters
+depth_distance = 50         # Maximum distance for depth calculation (in meters)
+sample_size = 10            # Adjust sample size for finer or coarser sampling
+scale_factor = 2          # Scale factor for depth calculation
 smoothing_factor = 1.0      # Smoothing factor for depth values
-window_size = 15             # Window size for median filtering
+window_size = 8             # Window size for median filtering
 remove_time = 0.1           # Time (in seconds) after which an object is considered 'stale' and removed
-confidence_threshold = 0.6  # Confidence threshold for detections
+confidence_threshold = 0.6  # YOLO Confidence threshold for detections
 # ------------------------ ##
 
 # Suppress YOLO console output
@@ -46,6 +52,7 @@ print(f"\nYOLO.v8 on {processor} at {fps} FPS")
 smoothed_depths = {}
 object_data = {}
 detected_objects = {}
+# sampled_points = {}
 # --------------------------------- ##
 
 ## -- Initialzing cameras -- ##
@@ -63,12 +70,11 @@ else:
 # ---------------------------- ##
 
 ## -- Camera settings -- ##
-# Set camera brightness
-brightness_value = 120  # (0-255)
+# Camera brightness
 cap_left.set(cv2.CAP_PROP_BRIGHTNESS, brightness_value)
 cap_right.set(cv2.CAP_PROP_BRIGHTNESS, brightness_value)
 print(f"\nCamera brightness set to {brightness_value}")
-# Set camera resolution
+# Camera resolution
 cap_left.set(cv2.CAP_PROP_FRAME_WIDTH, width)
 cap_left.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
 cap_right.set(cv2.CAP_PROP_FRAME_WIDTH, width)
@@ -102,21 +108,12 @@ def draw_objects_on_frame(frame, object_data):
         center_x = (x1 + x2) // 2
         center_y = (y1 + y2) // 2
 
-        # Color logic based on depth
-        # if depth is None:  
-        #     color = (0, 0, 255)             # Red for when only the left camera sees the object
-        #     text_color = (0, 0, 255)
-        #     depth_text = "No depth"         # No depth shown
-        if depth < 50:
+        if depth is None:
+            continue  
+        elif depth < depth_distance:
             color = (0, 255, 0)             # Green for depth < 10m
             text_color = (0, 0, 0)          # Black text
             depth_text = f"{depth:.2f}m"
-        else:
-            continue
-        # else:
-        #     color = (0, 255, 255)           # Yellow for depth >= 10m
-        #     text_color = (0, 0, 0)          # Black text
-        #     depth_text = f"{depth:.2f}m"
 
         # Draw bounding box
         cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
@@ -125,13 +122,44 @@ def draw_objects_on_frame(frame, object_data):
         cv2.circle(frame, (center_x, center_y), 5, color, -1)
 
         # Draw category label at the top-left corner of the bounding box
-        cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 2, cv2.LINE_AA)
+        # cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 2, cv2.LINE_AA)
+        cv2.putText(frame, label, (center_x - 50, center_y - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)  # White text above
+        cv2.putText(frame, label, (center_x - 50, center_y + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2, cv2.LINE_AA)        # Black text below
 
-        # Draw depth text above and below the circle
-        cv2.putText(frame, depth_text, (center_x - 30, center_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 2, cv2.LINE_AA)
-        cv2.putText(frame, depth_text, (center_x - 30, center_y + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)
+        # Draw depth text to the left and right of the circle
+        cv2.putText(frame, depth_text, (center_x - 60, center_y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 2, cv2.LINE_AA)   # Black text to the left
+        cv2.putText(frame, depth_text, (center_x + 10, center_y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)  # White text to the right
 
     return frame
+
+import random
+
+def calculate_depth(disparity, bbox, FOCAL_LENGTH_L, BASELINE, scale_factor, smoothing_factor, smoothed_depths, object_id):
+    x1, y1, x2, y2 = bbox
+
+    # Extract the region of interest (ROI) from the disparity map
+    roi = disparity[y1:y2, x1:x2]
+
+    # Filter out invalid disparity values (e.g., 0 or very high values)
+    valid_disparities = roi[(roi > 0) & (roi < 255)]
+
+    if valid_disparities.size > 0:
+        # Calculate the median disparity
+        disparity_value = np.median(valid_disparities)
+
+        # Calculate depth using the median disparity
+        depth = (FOCAL_LENGTH_L * BASELINE) / (disparity_value * scale_factor) / 100
+
+        # Apply Exponential Moving Average (EMA) for smoothing
+        if object_id in smoothed_depths:
+            smoothed_depths[object_id] = (smoothing_factor * depth) + (1 - smoothing_factor) * smoothed_depths[object_id]
+        else:
+            smoothed_depths[object_id] = depth
+
+        return smoothed_depths[object_id]
+
+    # Return None if no valid disparities are found
+    return None
 
 frame_time = 1/fps
 while cap_left.isOpened() and cap_right.isOpened():
@@ -190,47 +218,50 @@ while cap_left.isOpened() and cap_right.isOpened():
 
             # If a corresponding object was found in both cameras, calculate depth
             if corresponding_box_right is not None:
-                center_x_left = (x1 + x2) // 2
-                center_y_left = (y1 + y2) // 2  
+                bbox = (x1, y1, x2, y2)
+                depth = calculate_depth(disparity, bbox, FOCAL_LENGTH_L, BASELINE, scale_factor, smoothing_factor, smoothed_depths, object_id)
 
-                # Use Median Filtering for Disparity 
-                half_window = window_size // 2
+                # center_x_left = (x1 + x2) // 2
+                # center_y_left = (y1 + y2) // 2  
+
+                # # Use Median Filtering for Disparity 
+                # half_window = window_size // 2
                 
-                if (center_y_left - half_window >= 0 and center_y_left + half_window < disparity.shape[0] and 
-                    center_x_left - half_window >= 0 and center_x_left + half_window < disparity.shape[1]):
+                # if (center_y_left - half_window >= 0 and center_y_left + half_window < disparity.shape[0] and 
+                #     center_x_left - half_window >= 0 and center_x_left + half_window < disparity.shape[1]):
 
-                    region = disparity[center_y_left - half_window:center_y_left + half_window + 1,
-                                       center_x_left - half_window:center_x_left + half_window + 1]
-                    disparity_value = np.median(region)  # Median filtering
-                else:
-                    disparity_value = disparity[center_y_left, center_x_left]  # Fallback
+                #     region = disparity[center_y_left - half_window:center_y_left + half_window + 1,
+                #                        center_x_left - half_window:center_x_left + half_window + 1]
+                #     disparity_value = np.median(region)  # Median filtering
+                # else:
+                #     disparity_value = disparity[center_y_left, center_x_left]  # Fallback
 
-                if 0 < disparity_value < 255:
-                    depth = (FOCAL_LENGTH_L * BASELINE) / (disparity_value * scale_factor) / 100
+                # if 0 < disparity_value < 255:
+                #     depth = (FOCAL_LENGTH_L * BASELINE) / (disparity_value * scale_factor) / 100
 
-                    # Apply Exponential Moving Average (EMA) for smoothing
-                    if object_id in smoothed_depths:
-                        smoothed_depths[object_id] = (smoothing_factor*depth) + (1-smoothing_factor) * smoothed_depths[object_id]
-                    else:
-                        smoothed_depths[object_id] = depth
+                #     # Apply Exponential Moving Average (EMA) for smoothing
+                #     if object_id in smoothed_depths:
+                #         smoothed_depths[object_id] = (smoothing_factor*depth) + (1-smoothing_factor) * smoothed_depths[object_id]
+                #     else:
+                #         smoothed_depths[object_id] = depth
                     
-                    depth = smoothed_depths[object_id]
+                #     depth = smoothed_depths[object_id]
 
-                    # Ensure object_data is updated safely
-                    if object_id in object_data:
-                        object_data[object_id].update({
-                            "bbox": (x1, y1, x2, y2),
-                            "depth": depth,
-                            "label": label,
-                            "last_seen": current_time  # Ensure 'last_seen' is always updated
-                            })
-                    else:
-                        object_data[object_id] = {
-                            "bbox": (x1, y1, x2, y2),
-                            "depth": depth,
-                            "label": label,
-                            "last_seen": current_time  # Ensure 'last_seen' is initialized
-                        }
+                # Ensure object_data is updated safely
+                if object_id in object_data:
+                    object_data[object_id].update({
+                        "bbox": (x1, y1, x2, y2),
+                        "depth": depth,
+                        "label": label,
+                        "last_seen": current_time,  # Ensure 'last_seen' is always updated
+                        })
+                else:
+                    object_data[object_id] = {
+                        "bbox": (x1, y1, x2, y2),
+                        "depth": depth,
+                        "label": label,
+                        "last_seen": current_time,  # Ensure 'last_seen' is initialized
+                    }
 
     # Remove stale objects safely at the end of the loop
     object_data = {obj_id: data for obj_id, data in object_data.items() if "last_seen" in data and current_time - data["last_seen"] < remove_time}
