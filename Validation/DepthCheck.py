@@ -30,13 +30,13 @@ plt.figure(figsize=(10, 6))
 for scaling_factor, points in data.items():
     plt.plot(points["x"], points["y"], marker='o', label=scaling_factor)
 
-plt.plot([0, 10], [0, 10], linestyle='--', color='black', label='y = x (reference)')
+plt.plot([0, 10], [0, 10], linestyle='--', color='black', label='ideal')
 
 # Add labels, title, and legend
 plt.xlabel("Distance (meters)")
 plt.ylabel("Measured Depth (meters)")
 plt.title("Depth Accuracy for Different Scaling Factors")
-plt.legend(title="Scaling Factors")
+plt.legend(title="Scaling Factors (Calibrated between 2-6m)")
 plt.grid(True)
 plt.savefig("Validation/DepthCheck.png")     # Save image
 
@@ -50,11 +50,11 @@ for scaling_factor, points in data.items():
     plt.plot(points["x"], differences, marker='o', label=scaling_factor)
 
 # Add a horizontal line at y = 0 for reference
-plt.axhline(0, color='gray', linestyle='--', label='y = 0 (reference)')
+plt.axhline(0, color='gray', linestyle='--', label='ideal')
 
 # Add labels, title, and legend
 plt.xlabel("Distance (meters)")
-plt.ylabel("Difference (Measured Depth - Real Distance) (meters)")
+plt.ylabel("Error (meters)")
 plt.title("Difference Between Measured Depth and Real Distance")
 plt.legend(title="Scaling Factors")
 plt.grid(True)
