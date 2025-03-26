@@ -3,167 +3,234 @@
 
 print("\nStarting...")
 
+#################################################################
+#################################################################
+# -------------------------- Imports -------------------------- #
 # Import required libraries
 import cv2
 import numpy as np
 from ultralytics import YOLO
 import logging
 import time
+logging.disable(logging.CRITICAL)   # Suppress YOLO console output
 
-## -- Manual Input Parameters -- ##
+# Load data
+calib_data = np.load("Calibration/stereo_calibration.npz")
+mtxL, distL, mtxR, distR = calib_data["mtxL"], calib_data["distL"], calib_data["mtxR"], calib_data["distR"]
+# FOCAL_LENGTH_L, BASELINE = calib_data["FOCAL_LENGTH_L"], calib_data["BASELINE"]
+camera_propeties = [calib_data["FOCAL_LENGTH_L"], calib_data["BASELINE"]]
+object_data = {}    # Initializing empty list
+print('\t\033[92mImport \u2714\033[0m')
+
+# ------------------------ END Imports ------------------------ #
+#################################################################
+#################################################################
+
+
+
+###########################################################################
+###########################################################################
+# ------------------- Global Variables and Parameters ------------------- #
+# Path to .pt files
+yolo_model = YOLO("yolo11n.pt")
+pallet_model = YOLO("training/palletbox_trained.pt");
+target_class = ["bottom"]    # Classes {'block', 'bottom', 'stringer', 'top'}
+
+# Set camera ID (0 is for laptop camera, >0 is for external cameras)
+LCameraID = 1; RCameraID = 2
+
+# Manual Input Parameters
 processor = 'GPU'               # 'CPU' or 'GPU'
-fps = 60                        # Frames per second
+fps = 30                        # Frames per second
 brightness_value = 120          # (0-255)
 width = 720; height = width     
 depth_distance = 20             # Maximum distance for depth calculation (in meters)
-scale_factor = 2.2              # Scale factor for depth calculation
+scale_factor = 1.9                # Scale factor for depth calculation
 remove_time = 0.1               # Time (in seconds) after which an object is considered 'stale' and removed
 object_threshold = 0.4          # Confidence threshold for object detection
 pallet_threshold = 0.6          # Confidence threshold for pallet detection
-## ---------------------------- ##
 
-# Suppress YOLO console output
-logging.disable(logging.CRITICAL)
-
-## -- Load data -- ##
-calib_data = np.load("Calibration/stereo_calibration.npz")
-mtxL, distL, mtxR, distR = calib_data["mtxL"], calib_data["distL"], calib_data["mtxR"], calib_data["distR"]
-FOCAL_LENGTH_L, BASELINE = calib_data["FOCAL_LENGTH_L"], calib_data["BASELINE"]
-## --------------- ##
-
-## -- Initializing cameras -- ##
-camera_left = cv2.VideoCapture(1, cv2.CAP_DSHOW)
-camera_right = cv2.VideoCapture(2, cv2.CAP_DSHOW)
-if not camera_left.isOpened():
-    print("Error: Unable to open left camera.")
-    exit(1)
-elif not camera_right.isOpened():
-    print("Error: Unable to open right camera.")
-    exit(1)
-else:
-    print('\033[92mCameras initialized.\033[0m')
-## ---------------------------- ##
-
-## -- Load YOLO and Custom Model -- ##
-yolo_model = YOLO("yolov8n.pt")
-pallet_model = YOLO("training/pallets_trained.pt")
-if processor == 'GPU':
-    yolo_model.to('cuda')
-    pallet_model.to('cuda')
-else:
-    yolo_model.to('cpu')
-    pallet_model.to('cpu')
-print(f'\033[93mRunning on {processor} at {fps} FPS.')
-## ----------------------------------- ##
-
-## -- Detection -- ##
-def run_detection(frame, model, conf_threshold):
-    results = model(frame)
-    detections = []
-    for result in results:
-        for box in result.boxes:
-            if box.conf[0] < conf_threshold:
-                continue
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            label = f"{model.names[int(box.cls[0])]} {box.conf[0]:.2f}"         # Get the object name and confidence score
-            detections.append((x1, y1, x2, y2, label, int(box.cls[0])))
-    return detections
-## ---------------- ##
-
-## -- Camera settings -- ##
-camera_left.set(cv2.CAP_PROP_BRIGHTNESS, brightness_value)
-camera_right.set(cv2.CAP_PROP_BRIGHTNESS, brightness_value)
-camera_left.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-camera_left.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-camera_right.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-camera_right.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-print(f"Camera resolution set to {width}x{height}.")
-print(f"Brightness set to {brightness_value}.")
-## ---------------------- ##
-
-## -- Parameters for disparity calculation -- ##
+# Parameters for disparity calculation
 blockSize = 5; P1 = 8*3*blockSize**2; P2 = 32*3*blockSize**2
-stereoSGBM = cv2.StereoSGBM_create(minDisparity=0,
+stereoSGBM = cv2.StereoSGBM_create(
+    minDisparity=0,
     numDisparities=16*16,
     uniquenessRatio=5,
     speckleWindowSize=100,
     speckleRange=16,
     disp12MaxDiff=1,
-    blockSize=blockSize,
-    P1=P1,
-    P2=P2
+    blockSize=blockSize, P1=P1, P2=P2
     )
-## ------------------------------------------- ##
+print('\t\033[92mVariables and Parameters \u2714\033[0m')
 
-# Initializing empty list
-object_data = {}
+# ----------------- END Global Variables and Parameters ----------------- #
+###########################################################################
+###########################################################################
 
-print("\033[92mVisualizing...\033[0m")
-frame_time = 1 / fps
-while camera_left.isOpened() and camera_right.isOpened():
-    ret_left, frame_left = camera_left.read()
-    ret_right, frame_right = camera_right.read()
-    if not ret_left or not ret_right:
-        print("\033[91mError: Could not read from both cameras\033[0m")
-        break
-    
-    # Convert to grayscale
+
+
+#########################################################################
+#########################################################################
+# --------------------------- DEFINITIONS ----------------------------- #
+# Initialize Cameras
+def init_cameras(LCameraID, RCameraID, w, h, bvalue):
+    print("\t\033[93mInitializing cameras..\033[0m")
+    camera_left = cv2.VideoCapture(LCameraID, cv2.CAP_DSHOW)
+    camera_right = cv2.VideoCapture(RCameraID, cv2.CAP_DSHOW)
+    if not camera_left.isOpened():
+        print("\t\t\033[91mError: Unable to open left camera.\033[0m")
+        exit(1)
+    elif not camera_right.isOpened():
+        print("\t\t\033[91mError: Unable to open right camera.\033[0m")
+        exit(1)
+    else:
+        camera_left.set(cv2.CAP_PROP_BRIGHTNESS, bvalue)
+        camera_right.set(cv2.CAP_PROP_BRIGHTNESS, bvalue)
+        camera_left.set(cv2.CAP_PROP_FRAME_WIDTH, w)
+        camera_left.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
+        camera_right.set(cv2.CAP_PROP_FRAME_WIDTH, w)
+        camera_right.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
+        print(f"\t\tCamera resolution set to {w}x{h}.")
+        print(f"\t\tBrightness set to {bvalue}.")
+        print('\t\033[92mCameras initialized \u2714 \033[0m')
+    return camera_left, camera_right
+
+# Object Detection
+def run_detection(frame, model, conf_threshold, target_class):
+    results = model(frame)
+    BoundingBox = []
+
+    for result in results:
+        for box in result.boxes:
+            class_id = int(box.cls[0])                      # Class id
+            class_name = model.names[class_id]              # Class name that corresponds to its id
+            box_conf = float(box.conf)                      # Confidence score for the bounding 
+            x1, y1, x2, y2 = map(int, box.xyxy[0])          # Extract box corner coordinates
+
+            # Filtering using confidence threshold and target class
+            if box_conf < conf_threshold or target_class is not None and class_name != target_class:
+                continue
+
+            label = f"{class_name} {box_conf:.2f}"
+            BoundingBox.append((x1, y1, x2, y2, label, class_id))
+    return BoundingBox
+
+# Object Depth Calculation
+def depth_calculation(detections, disparity, camera_propeties, scale_factor):
+
+        for x1, y1, x2, y2, label, class_id in detections:
+            object_id = f"{class_id}_{x1}_{y1}_{x2}_{y2}"           # Unique ID for each object
+            RoI = disparity[y1:y2, x1:x2]                           # Maps out the Region of interest
+
+            # Filter invalid disparities
+            valid_disparities = RoI[(RoI > 0) & (RoI < 255)]
+            if valid_disparities.size > 0:
+                depth = (camera_propeties[0] * camera_propeties[1]) / (np.median(valid_disparities) * scale_factor)/100
+                print(f"first: {depth}")
+                depth = (-0.7388+(0.7388**2-4*0.0478*(0.3123-depth))**0.5)/(2*0.0478)
+                print(f"second: {depth}\n")
+
+                # Filter objects based on a predefined depth (How far do you want to look)
+                if depth < depth_distance:
+                    object_data[object_id] = {"BoundingBox": (x1, y1, x2, y2), "depth": depth, "label": label, "last_seen": time.time()}
+       
+        # Calculated the depth map
+        disparity[disparity == 0] = 0.1
+        depth_map = (camera_propeties[0] * camera_propeties[1]) / (disparity * scale_factor)/100
+
+        # Normalize depth for visualization
+        depth_map_normalized = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+
+        # Apply color map
+        depth_colormap = cv2.applyColorMap(depth_map_normalized, cv2.COLORMAP_JET)
+
+        return object_data, depth_colormap
+
+def disparity_calculation(frame_left, frame_right):
+    # Converting images to grayscale
     gray_left = cv2.cvtColor(frame_left, cv2.COLOR_BGR2GRAY)
     gray_right = cv2.cvtColor(frame_right, cv2.COLOR_BGR2GRAY)
 
-    # Disparity calculation
+    # Disparity calculation for the whole scene
     disparity = stereoSGBM.compute(gray_left, gray_right).astype(np.float32) / 16.0
+
+    return disparity
+
+# Visualization
+def draw_visuals (frame_left, bbox, label, depth):
+    x1, y1, x2, y2 = bbox
+    center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2
+        
+    # Displaying bounding box, label.
+    cv2.rectangle(frame_left, (x1, y1), (x2, y2), (0, 255, 0), 2)
+    cv2.putText(frame_left, label, (x1+5, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+    cv2.putText(frame_left, label, (x1+5, y1+15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
     
+    # Draw midpoint circle.
+    cv2.circle(frame_left, (center_x, center_y), 4, (0, 0, 255), -1)
+
+    # Draw arrows from borders to the center.
+    # cv2.arrowedLine(frame_left, (x1, center_y), (center_x//2, center_y), (255, 0, 0), 2, tipLength=0.2)  # Horizontal arrow
+    # cv2.arrowedLine(frame_left, (center_x//2, y1), (center_x//2, center_y), (0, 255, 255), 2, tipLength=0.2)  # Vertical arrow
+
+    # Displaying depth besides the midpoint circle if depth is valid.
+    if depth is not None:
+        depth_text = f"{obj['depth']:.2f}m"
+        cv2.putText(frame_left, depth_text, (center_x - 20, center_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+        cv2.putText(frame_left, depth_text, (center_x - 20, center_y + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+
+# Set processor for the models
+def set_processor(model1, model2, processor):
+    if processor == 'GPU':
+        model1.to('cuda'); model2.to('cuda')
+    else:
+        model1.to('cpu');  model2.to('cpu')
+    print(f'\tRunning on {processor} at {fps} FPS.')
+
+# --------------------------- END DEFINITIONS ----------------------------- #
+#############################################################################
+#############################################################################
+
+
+
+########################################################################
+########################################################################
+# --------------------------- MAIN LOGIC ----------------------------- #
+camera_left, camera_right = init_cameras(LCameraID, RCameraID, width, height, brightness_value)
+set_processor(yolo_model, pallet_model, processor)
+
+## ---- MAIN LOOP ---- ##
+print("Visualizing...")
+frame_time = 1 / fps
+while camera_left.isOpened() and camera_right.isOpened():
+    _, frame_left = camera_left.read()
+    _, frame_right = camera_right.read()
+
+    # Calculate the disparity for the combined image
+    disparity = disparity_calculation(frame_left, frame_right)
+
     # Run object and pallet detection
-    all_detections = run_detection(frame_left, yolo_model, object_threshold) + run_detection(frame_left, pallet_model, pallet_threshold)
-    
-    # Loops through all detections and calculates depth
-    for x1, y1, x2, y2, label, cls_id in all_detections:
-        object_id = f"{cls_id}_{x1}_{y1}_{x2}_{y2}"         # Unique ID for each object
-        RoI = disparity[y1:y2, x1:x2]                       # Region of interest
+    all_detections = run_detection(frame_left, yolo_model, object_threshold, target_class="person") + run_detection(frame_left, pallet_model, pallet_threshold, target_class)
 
-        # Filter invalid disparities
-        valid_disparities = RoI[(RoI > 0) & (RoI < 255)]
-        if valid_disparities.size > 0:
-            depth = (FOCAL_LENGTH_L * BASELINE) / (np.median(valid_disparities) * scale_factor) / 100
-            # Filter objects based on depth
-            if depth > depth_distance:
-                depth = None
-            else:
-                object_data[object_id] = {"bbox": (x1, y1, x2, y2), "depth": depth, "label": label, "last_seen": time.time()}
-        else:
-            depth = None
+    # Depth calculations
+    object_data, depth_colormap = depth_calculation(all_detections, disparity, camera_propeties, scale_factor)
+    object_data = {k: v for k, v in object_data.items() if time.time() - v["last_seen"] < remove_time}  # Remove objects that haven't been seen in 'remove_time' seconds
 
-    # Remove objects that haven't been seen in 'remove_time' seconds
-    object_data = {k: v for k, v in object_data.items() if time.time() - v["last_seen"] < remove_time}
-
+    # Visualize bounding boxes, labels and depth
     for obj in object_data.values():
-        x1, y1, x2, y2 = obj["bbox"]
-        center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2
-        
-        # Displaying bounding box and label, midpoint circle.
-        cv2.rectangle(frame_left, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        cv2.putText(frame_left, obj["label"], (x1+5, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
-        cv2.putText(frame_left, obj["label"], (x1+5, y1+15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-        cv2.circle(frame_left, (center_x, center_y), 4, (0, 0, 255), -1)
-        
-        # Displaying depth besides the midpoint circle if depth is valid.
-        if obj["depth"] is not None:
-            depth_text = f"{obj['depth']:.2f}m"
-            cv2.putText(frame_left, depth_text, (center_x - 20, center_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
-            cv2.putText(frame_left, depth_text, (center_x - 20, center_y + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+        draw_visuals(frame_left, obj["BoundingBox"], obj["label"], obj["depth"])
     
     # Display Object Detection + Depth and the Disparity map
     cv2.imshow("Disparity Map", cv2.applyColorMap(cv2.normalize(disparity, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U), cv2.COLORMAP_JET))
+    # cv2.imshow("Depth Map", depth_colormap)
     cv2.imshow("Left Camera - Object Detection + Depth", frame_left)
 
-    # Stops the code when pressing q
+    # Breaks out of the loop when pressing 'Q' and stopping code
     if cv2.waitKey(1) & 0xFF == ord('q'):
-        print("\033[91mExiting...\033[0m")
+        print("\033[91mStopping...\033[0m\n")
         break
-    
-    key = cv2.waitKey(int(frame_time * 1000))
+    cv2.waitKey(int(frame_time * 1000))
+## ------- END MAIN LOGIC ------- ##
 
-camera_left.release()
-camera_right.release()
-cv2.destroyAllWindows()
+# Stop and Quit
+camera_left.release(); camera_right.release(); cv2.destroyAllWindows()
