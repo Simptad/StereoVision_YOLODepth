@@ -1,7 +1,7 @@
 
 
-train: datasets\pallets\images\train
-val: datasets\pallets\images\val
+train: datasets\palletbox\images\train
+val: datasets\palletbox\images\val
 
-nc: 1  # number of classes
-names: ['pallet']
+nc: 4  # number of classes
+names: ['block', 'bottom', 'stringer', 'top']

@@ -7,14 +7,15 @@ conf1 = 0.7
 conf2 = 0.5
 
 # Load your trained model
-model = YOLO("training/pallets_trained.pt")  # Path to your trained model
+model = YOLO("training/palletbox_trained.pt")           # Path to your trained model
+testing_images = ("training/datasets/pallets_testing\images")     # Path for testing images
 
 # Run inference on a folder of images with two different confidence thresholds
-results1 = model("training/datasets/pallets_testing/images", conf=conf1)
-results2 = model("training/datasets/pallets_testing/images", conf=conf2)
+results1 = model(testing_images, conf=conf1)
+results2 = model(testing_images, conf=conf2)
 
 # Ensure the output folder exists, create it if it doesn't
-output_folder = "training/datasets/pallets_testingOutput"
+output_folder = "training/datasets/palletbox_testingOutput"
 os.makedirs(output_folder, exist_ok=True)
 
 # Dictionary to store window names and corresponding images
