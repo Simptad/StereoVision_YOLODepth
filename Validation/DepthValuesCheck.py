@@ -44,27 +44,35 @@ for meter in meter_range:
 min_y = min(min(mean_measured), min(mean_adjusted), min(error_measured), min(error_adjusted))
 max_y = max(max(mean_measured), max(mean_adjusted), max(error_measured), max(error_adjusted))
 
-plotrange_x = range(0, max(meter_range)+1)
-plotrange_y = range(int(min_y), int(max_y)+1)
-# Plotting 'Real Depth vs Measured/Adjusted depth'
+plotrange_x = range(0, max(meter_range) + 1)
+plotrange_y = range(0, int(max_y) + 1)  # Only positive ticks for display
+
+plt.figure(figsize=(8, 6))
+
+# Plot 'Real Depth vs Measured/Adjusted Depth'
 plt.plot(meter_range, mean_measured, label='Measured', marker='o', linestyle='-', color='b')
 plt.plot(meter_range, mean_adjusted, label='Adjusted', marker='o', linestyle='-', color='r')
 plt.plot([0, 10], [0, 10], linestyle=':', color='black', label='Ideal Depth')
 plt.legend()
 plt.grid(True)
 
-# Plotting 'Deviation'
+# Plot 'Deviation' (unchanged)
 plt.plot(meter_range, error_measured, marker='o', linestyle='-', color='b')
 plt.plot(meter_range, error_adjusted, marker='o', linestyle='-', color='r')
+
 plt.axhline(0, color='black', linestyle='--', label='Ideal Error')
+
 plt.xlabel('Real Depth [m]')
 plt.ylabel('Measured/Adjusted Depth & Deviation [m]')
 plt.title('Real Depth vs Measured/Adjusted Depth')
+
 plt.legend()
 plt.grid(True)
+
+# Highlight error range
 plt.axhspan(
-    ymin=min(min(error_measured), min(error_adjusted)),
-    ymax=max(max(error_measured), max(error_adjusted)),
+    ymin=min(error_measured + error_adjusted)-1,
+    ymax=max(error_measured + error_adjusted),
     color='red', alpha=0.1
 )
 plt.text(
@@ -75,9 +83,11 @@ plt.text(
     color='red',
     bbox=dict(facecolor='white', alpha=0.7, edgecolor='red')
 )
+
+# Highlight depth range
 plt.axhspan(
-    ymin = 0,
-    ymax=max(max(mean_measured), max(mean_adjusted)),
+    ymin=0,
+    ymax=max(max(mean_measured), max(mean_adjusted))+1,
     color='green', alpha=0.1
 )
 plt.text(
@@ -88,6 +98,16 @@ plt.text(
     color='green',
     bbox=dict(facecolor='white', alpha=0.7, edgecolor='green')
 )
-plt.yticks(plotrange_y), plt.xticks(plotrange_x)
+
+plt.xticks(plotrange_x)
+# Adjust the y-axis to mirror negative values visually
+plt.ylim(min_y-1, max_y+1)  # Ensure full range is shown
+plt.yticks(
+    range(int(min_y), int(max_y) + 1),
+    [abs(y) for y in range(int(min_y), int(max_y) + 1)]  # Display absolute values
+)
+
 plt.savefig("Validation/figures/RealvsMeasuredDepth")
 plt.show()
+
+
