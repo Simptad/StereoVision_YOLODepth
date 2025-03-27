@@ -44,7 +44,7 @@ LCameraID = 1; RCameraID = 2
 processor = 'GPU'               # 'CPU' or 'GPU'
 fps = 30                        # Frames per second
 brightness_value = 120          # (0-255)
-width = 1080; height = width     
+width = 720; height = width     
 depth_distance = 20             # Maximum distance for depth calculation (in meters)
 scale_factor = 1.9                # Scale factor for depth calculation
 remove_time = 0.1               # Time (in seconds) after which an object is considered 'stale' and removed
@@ -55,11 +55,11 @@ pallet_threshold = 0.6          # Confidence threshold for pallet detection
 blockSize = 5; P1 = 8*3*blockSize**2; P2 = 32*3*blockSize**2
 stereoSGBM = cv2.StereoSGBM_create(
     minDisparity=0,
-    numDisparities=16*16,
-    uniquenessRatio=5,
-    speckleWindowSize=100,
-    speckleRange=16,
-    disp12MaxDiff=1,
+    numDisparities=16*21,           # Depth resolution
+    uniquenessRatio=5,              # Higher value to reduce noise
+    speckleWindowSize=100,          # Larger window to remove speckles
+    speckleRange=16,                # Larger range to handle more variations
+    disp12MaxDiff=1,                
     blockSize=blockSize, P1=P1, P2=P2
     )
 print('\t\033[92mVariables and Parameters \u2714\033[0m')
@@ -152,34 +152,40 @@ def append_depth_values(depthdata):
 
 # Object Depth Calculation
 def depth_calculation(detections, disparity, camera_propeties, scale_factor):
-
         for x1, y1, x2, y2, label, class_id in detections:
             object_id = f"{class_id}_{x1}_{y1}_{x2}_{y2}"           # Unique ID for each object
             RoI = disparity[y1:y2, x1:x2]                           # Maps out the Region of interest
 
             # Filter invalid disparities
             valid_disparities = RoI[(RoI > 0) & (RoI < 255)]
+            # disparity = cv2.bilateralFilter(disparity.astype(np.uint8), 9, 75, 75)
             if valid_disparities.size > 0:
                 depth = (camera_propeties[0] * camera_propeties[1]) / (np.median(valid_disparities) * scale_factor)/100
-                depth_new = (-0.7388+(0.7388**2-4*0.0478*(0.3123-depth))**0.5)/(2*0.0478)
+                depth = (-0.7388+np.sqrt(0.7388**2-4*0.0478*(0.3123-depth)))/(2*0.0478)
 
                 # Filter objects based on a predefined depth (How far do you want to look)
                 if depth < depth_distance:
                     object_data[object_id] = {"BoundingBox": (x1, y1, x2, y2), "depth": depth, "label": label, "last_seen": time.time()}
 
-        # Calculated the depth map
-        disparity[disparity == 0] = 0.1
-        depth_map = (camera_propeties[0] * camera_propeties[1]) / (disparity * scale_factor)/100
+        return object_data
 
-        # Normalize depth for visualization
-        depth_map_normalized = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+# Depth Map Calculation
+def depth_map(disparity, camera_propeties, scale_factor):
+    # Calculated the depth map
+    disparity[disparity <= 0] = 0.1
+    depthmap_values = (camera_propeties[0] * camera_propeties[1]) / (disparity * scale_factor)/100
+    depthmap_values = (-0.7388+np.sqrt(0.7388**2-4*0.0478*(0.3123-depthmap_values)))/(2*0.0478)
+    
+    # Clip depth values to a reasonable range
+    depthmap_values = np.clip(depthmap_values, 0.5, 15)
 
-        # Apply color map
-        depth_colormap = cv2.applyColorMap(depth_map_normalized, cv2.COLORMAP_JET)
+    # Normalize depth and apply color for visualization
+    depthmap_normalized = cv2.normalize(depthmap_values, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    depthmap = cv2.applyColorMap(depthmap_normalized, cv2.COLORMAP_PLASMA)
 
-        append_depth_values([depth, depth_new])
-        return object_data, depth_colormap
+    return depthmap
 
+# Disparity Calculation
 def disparity_calculation(frame_left, frame_right):
     # Converting images to grayscale
     gray_left = cv2.cvtColor(frame_left, cv2.COLOR_BGR2GRAY)
@@ -188,7 +194,14 @@ def disparity_calculation(frame_left, frame_right):
     # Disparity calculation for the whole scene
     disparity = stereoSGBM.compute(gray_left, gray_right).astype(np.float32) / 16.0
 
-    return disparity
+    # Clip disparity values to resonable values
+    disparity = np.clip(disparity, 0.01, 255)
+
+    # Normalize depth and apply color for visualization
+    disparity_normalized = cv2.normalize(disparity, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    disparitymap = cv2.applyColorMap(disparity_normalized, cv2.COLORMAP_CIVIDIS)
+
+    return disparity, disparitymap
 
 # Visualization
 def draw_visuals (frame_left, bbox, label, depth):
@@ -212,6 +225,21 @@ def draw_visuals (frame_left, bbox, label, depth):
         depth_text = f"{obj['depth']:.2f}m"
         cv2.putText(frame_left, depth_text, (center_x - 20, center_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
         cv2.putText(frame_left, depth_text, (center_x - 20, center_y + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+
+def display(frame_left, depthmap, disparitymap):
+        # Crop window
+        crop_left, crop_right = (340, 0)
+
+        # Disparity Map
+        disparitymap_cropped = disparitymap[:, crop_left:disparitymap.shape[1] - crop_right]
+
+        # Depth Map
+        depthmap_cropped = depthmap[:, crop_left:depthmap.shape[1] - crop_right]
+        
+        # Show camera feed
+        cv2.imshow("Disparity Map", disparitymap_cropped)
+        cv2.imshow("Depth Map", depthmap_cropped)
+        cv2.imshow("Left Camera - Object Detection + Depth", frame_left)
 
 # Set processor for the models
 def set_processor(model1, model2, processor):
@@ -241,23 +269,24 @@ while camera_left.isOpened() and camera_right.isOpened():
     _, frame_right = camera_right.read()
 
     # Calculate the disparity for the combined image
-    disparity = disparity_calculation(frame_left, frame_right)
+    disparity, disparitymap = disparity_calculation(frame_left, frame_right)
 
     # Run object and pallet detection
-    all_detections = run_detection(frame_left, yolo_model, object_threshold, target_class) + run_detection(frame_left, pallet_model, pallet_threshold, target_class)
+    all_detections = run_detection(frame_left, yolo_model, object_threshold, target_class=None) + run_detection(frame_left, pallet_model, pallet_threshold, target_class)
 
-    # Depth calculations
-    object_data, depth_colormap = depth_calculation(all_detections, disparity, camera_propeties, scale_factor)
+    # Object Depth Calculations
+    object_data = depth_calculation(all_detections, disparity, camera_propeties, scale_factor)
     object_data = {k: v for k, v in object_data.items() if time.time() - v["last_seen"] < remove_time}  # Remove objects that haven't been seen in 'remove_time' seconds
+
+    # Depth map
+    depthmap = depth_map(disparity, camera_propeties, scale_factor)
 
     # Visualize bounding boxes, labels and depth
     for obj in object_data.values():
         draw_visuals(frame_left, obj["BoundingBox"], obj["label"], obj["depth"])
     
-    # Display Object Detection + Depth and the Disparity map
-    # cv2.imshow("Disparity Map", cv2.applyColorMap(cv2.normalize(disparity, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U), cv2.COLORMAP_JET))
-    # cv2.imshow("Depth Map", depth_colormap)
-    cv2.imshow("Left Camera - Object Detection + Depth", frame_left)
+    # Display figures
+    display(frame_left, depthmap, disparitymap)
 
     # Breaks out of the loop when pressing 'Q' and stopping code
     if cv2.waitKey(1) & 0xFF == ord('q'):
