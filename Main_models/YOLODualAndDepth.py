@@ -13,6 +13,7 @@ from ultralytics import YOLO
 import logging
 import time
 logging.disable(logging.CRITICAL)   # Suppress YOLO console output
+import os
 
 # Load data
 calib_data = np.load("Calibration/stereo_calibration.npz")
@@ -33,8 +34,8 @@ print('\t\033[92mImport \u2714\033[0m')
 # ------------------- Global Variables and Parameters ------------------- #
 # Path to .pt files
 yolo_model = YOLO("yolo11n.pt")
-pallet_model = YOLO("training/palletbox_trained.pt");
-target_class = ["bottom"]    # Classes {'block', 'bottom', 'stringer', 'top'}
+pallet_model = YOLO("training/palletbox_trained.pt")
+target_class = ["person", "bottom"]    # Classes pallet {'block', 'bottom', 'stringer', 'top'}
 
 # Set camera ID (0 is for laptop camera, >0 is for external cameras)
 LCameraID = 1; RCameraID = 2
@@ -43,7 +44,7 @@ LCameraID = 1; RCameraID = 2
 processor = 'GPU'               # 'CPU' or 'GPU'
 fps = 30                        # Frames per second
 brightness_value = 120          # (0-255)
-width = 720; height = width     
+width = 1080; height = width     
 depth_distance = 20             # Maximum distance for depth calculation (in meters)
 scale_factor = 1.9                # Scale factor for depth calculation
 remove_time = 0.1               # Time (in seconds) after which an object is considered 'stale' and removed
@@ -108,12 +109,46 @@ def run_detection(frame, model, conf_threshold, target_class):
             x1, y1, x2, y2 = map(int, box.xyxy[0])          # Extract box corner coordinates
 
             # Filtering using confidence threshold and target class
-            if box_conf < conf_threshold or target_class is not None and class_name != target_class:
+            if (box_conf < conf_threshold) or (target_class is not None and class_name not in target_class):
                 continue
 
             label = f"{class_name} {box_conf:.2f}"
             BoundingBox.append((x1, y1, x2, y2, label, class_id))
     return BoundingBox
+
+def append_depth_values(depthdata):
+    file_path = "Validation/Depth_data/depth_values.txt"; data = []
+    start_meter = 10
+
+    depth, depth_new = depthdata[0], depthdata[1]
+    data.append(f"Before: {depth:.3f}\n")
+    data.append(f"After: {depth_new:.3f}\n")
+
+    # Ensure the file exists before reading
+    if not os.path.exists(file_path):
+        with open(file_path, "w") as file:
+            file.write("")  # Create an empty file if it doesn't exist
+    
+    # Open the file in read mode to check existing content
+    with open(file_path, "r") as file:
+        content = file.readlines()
+    
+    # Open the file in write mode to modify or append content
+    with open(file_path, "w") as file:
+        found_section = False
+        # Write existing content back, looking for the specified meter section
+        for line in content:
+            file.write(line)
+            if line.strip() == f"({start_meter}) meter":
+                found_section = True
+        
+        # If the section wasn't found, add a new section header
+        if not found_section:
+            file.write(f"\n({start_meter}) meter\n")
+        
+    # Open the file again in append mode to add the data without overwriting
+    with open(file_path, "a") as file:
+        file.writelines(data)
 
 # Object Depth Calculation
 def depth_calculation(detections, disparity, camera_propeties, scale_factor):
@@ -126,14 +161,12 @@ def depth_calculation(detections, disparity, camera_propeties, scale_factor):
             valid_disparities = RoI[(RoI > 0) & (RoI < 255)]
             if valid_disparities.size > 0:
                 depth = (camera_propeties[0] * camera_propeties[1]) / (np.median(valid_disparities) * scale_factor)/100
-                print(f"first: {depth}")
-                depth = (-0.7388+(0.7388**2-4*0.0478*(0.3123-depth))**0.5)/(2*0.0478)
-                print(f"second: {depth}\n")
+                depth_new = (-0.7388+(0.7388**2-4*0.0478*(0.3123-depth))**0.5)/(2*0.0478)
 
                 # Filter objects based on a predefined depth (How far do you want to look)
                 if depth < depth_distance:
                     object_data[object_id] = {"BoundingBox": (x1, y1, x2, y2), "depth": depth, "label": label, "last_seen": time.time()}
-       
+
         # Calculated the depth map
         disparity[disparity == 0] = 0.1
         depth_map = (camera_propeties[0] * camera_propeties[1]) / (disparity * scale_factor)/100
@@ -144,6 +177,7 @@ def depth_calculation(detections, disparity, camera_propeties, scale_factor):
         # Apply color map
         depth_colormap = cv2.applyColorMap(depth_map_normalized, cv2.COLORMAP_JET)
 
+        append_depth_values([depth, depth_new])
         return object_data, depth_colormap
 
 def disparity_calculation(frame_left, frame_right):
@@ -210,7 +244,7 @@ while camera_left.isOpened() and camera_right.isOpened():
     disparity = disparity_calculation(frame_left, frame_right)
 
     # Run object and pallet detection
-    all_detections = run_detection(frame_left, yolo_model, object_threshold, target_class="person") + run_detection(frame_left, pallet_model, pallet_threshold, target_class)
+    all_detections = run_detection(frame_left, yolo_model, object_threshold, target_class) + run_detection(frame_left, pallet_model, pallet_threshold, target_class)
 
     # Depth calculations
     object_data, depth_colormap = depth_calculation(all_detections, disparity, camera_propeties, scale_factor)
@@ -221,7 +255,7 @@ while camera_left.isOpened() and camera_right.isOpened():
         draw_visuals(frame_left, obj["BoundingBox"], obj["label"], obj["depth"])
     
     # Display Object Detection + Depth and the Disparity map
-    cv2.imshow("Disparity Map", cv2.applyColorMap(cv2.normalize(disparity, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U), cv2.COLORMAP_JET))
+    # cv2.imshow("Disparity Map", cv2.applyColorMap(cv2.normalize(disparity, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U), cv2.COLORMAP_JET))
     # cv2.imshow("Depth Map", depth_colormap)
     cv2.imshow("Left Camera - Object Detection + Depth", frame_left)
 
