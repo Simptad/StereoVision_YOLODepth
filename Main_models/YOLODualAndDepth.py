@@ -96,6 +96,14 @@ def init_cameras(LCameraID, RCameraID, w, h, bvalue):
         print('\t\033[92mCameras initialized \u2714 \033[0m')
     return camera_left, camera_right
 
+# Set processor for the models
+def set_processor(model1, model2, processor):
+    if processor == 'GPU':
+        model1.to('cuda'); model2.to('cuda')
+    else:
+        model1.to('cpu');  model2.to('cpu')
+    print(f'\tRunning on {processor} at {fps} FPS.')
+
 # Object Detection
 def run_detection(frame, model, conf_threshold, target_class):
     results = model(frame)
@@ -161,7 +169,7 @@ def depth_calculation(detections, disparity, camera_propeties, scale_factor):
             # disparity = cv2.bilateralFilter(disparity.astype(np.uint8), 9, 75, 75)
             if valid_disparities.size > 0:
                 depth = (camera_propeties[0] * camera_propeties[1]) / (np.median(valid_disparities) * scale_factor)/100
-                depth = (-0.7388+np.sqrt(0.7388**2-4*0.0478*(0.3123-depth)))/(2*0.0478)
+                depth = (-0.7388+np.sqrt(0.7388**2-4*0.0478*(0.3123-depth)))/(2*0.0478)     # Adjusted depth
 
                 # Filter objects based on a predefined depth (How far do you want to look)
                 if depth < depth_distance:
@@ -232,22 +240,13 @@ def display(frame_left, depthmap, disparitymap):
 
         # Disparity Map
         disparitymap_cropped = disparitymap[:, crop_left:disparitymap.shape[1] - crop_right]
-
         # Depth Map
         depthmap_cropped = depthmap[:, crop_left:depthmap.shape[1] - crop_right]
-        
+
         # Show camera feed
         cv2.imshow("Disparity Map", disparitymap_cropped)
         cv2.imshow("Depth Map", depthmap_cropped)
         cv2.imshow("Left Camera - Object Detection + Depth", frame_left)
-
-# Set processor for the models
-def set_processor(model1, model2, processor):
-    if processor == 'GPU':
-        model1.to('cuda'); model2.to('cuda')
-    else:
-        model1.to('cpu');  model2.to('cpu')
-    print(f'\tRunning on {processor} at {fps} FPS.')
 
 # --------------------------- END DEFINITIONS ----------------------------- #
 #############################################################################
