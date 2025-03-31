@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Read the txt file
-file_path = 'Validation\Depth_data\depth_values.txt'
+file_path = 'Validation/Depth_data/depth_values.txt'
 
 meter_range = range(1, 11)
 
