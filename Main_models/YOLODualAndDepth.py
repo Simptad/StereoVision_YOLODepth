@@ -18,7 +18,6 @@ import os
 # Load data
 calib_data = np.load("Calibration/stereo_calibration.npz")
 mtxL, distL, mtxR, distR = calib_data["mtxL"], calib_data["distL"], calib_data["mtxR"], calib_data["distR"]
-# FOCAL_LENGTH_L, BASELINE = calib_data["FOCAL_LENGTH_L"], calib_data["BASELINE"]
 camera_propeties = [calib_data["FOCAL_LENGTH_L"], calib_data["BASELINE"]]
 object_data = {}    # Initializing empty list
 print('\t\033[92mImport \u2714\033[0m')
@@ -35,23 +34,31 @@ print('\t\033[92mImport \u2714\033[0m')
 # Path to .pt files
 yolo_model = YOLO("yolo11n.pt")
 pallet_model = YOLO("training/palletbox_trained.pt")
-target_class = ["person", "bottom"]    # Classes pallet {'block', 'bottom', 'stringer', 'top'}
+target_class = ["person", "block"]          # Classes pallet {'block', 'bottom', 'stringer', 'top'}.
+# target_class = None                       # Use this to detect all objects.
 
-# Set camera ID (0 is for laptop camera, >0 is for external cameras)
-LCameraID = 1; RCameraID = 2
-
-# Manual Input Parameters
-processor = 'GPU'               # 'CPU' or 'GPU'
-fps = 30                        # Frames per second
+# Camera
+LCameraID = 1; RCameraID = 2    # Set camera ID (0 is for laptop camera, >0 is for external cameras)
 brightness_value = 120          # (0-255)
-width = 720; height = width     
+width = 720; height = width     # Resolution [pixels]
+
+# Computing
+processor = 'GPU'               # 'CPU' or 'GPU'  
+fps = 30                        # Frames per second 
+
+# Depth Estimation
 depth_distance = 20             # Maximum distance for depth calculation (in meters)
 scale_factor = 1.9              # Scale factor for depth calculation
+
+# Object Detection
 remove_time = 0.1               # Time (in seconds) after which an object is considered 'stale' and removed
 object_threshold = 0.4          # Confidence threshold for object detection
 pallet_threshold = 0.6          # Confidence threshold for pallet detection
 
-# Parameters for disparity calculation
+# Visualization
+cross_size = 5; cross_width = 2         # Center cross dimensions
+
+# Disparity calculation
 blockSize = 5; P1 = 8*3*blockSize**2; P2 = 32*3*blockSize**2
 stereoSGBM = cv2.StereoSGBM_create(
     minDisparity=0,
@@ -178,6 +185,25 @@ def depth_calculation(detections, disparity, camera_propeties, scale_factor):
 
         return object_data
 
+def calculate_tunnel_depth(camera_propeties, scale_factor, disparity, tunnel_center_points):
+    # Calculate tunnel center depths
+    tunnel_depth = []
+    for mid_x, mid_y in tunnel_center_points:
+        # Ensure the point is within the disparity map bounds
+        if 0 <= mid_x < disparity.shape[1] and 0 <= mid_y < disparity.shape[0]:
+            disparity_value = disparity[mid_y, mid_x]
+
+            # Skip invalid disparity values
+            if disparity_value > 0:
+                depth = (camera_propeties[0] * camera_propeties[1]) / (disparity_value * scale_factor) / 100  # Convert to meters
+                depth = (-0.7388 + np.sqrt(0.7388**2 - 4 * 0.0478 * (0.3123 - depth))) / (2 * 0.0478)  # Adjusted depth
+                tunnel_depth.append((mid_x, mid_y, depth))
+            else:
+                tunnel_depth.append((mid_x, mid_y, None))  # Invalid depth
+        else:
+            tunnel_depth.append((mid_x, mid_y, None))  # Out of bounds
+    return tunnel_depth
+
 # Depth Map Calculation
 def depth_map(disparity, camera_propeties, scale_factor):
     # Calculated the depth map
@@ -211,29 +237,106 @@ def disparity_calculation(frame_left, frame_right):
 
     return disparity, disparitymap
 
-# Visualization
-def draw_visuals (frame_left, bbox, label, depth):
-    x1, y1, x2, y2 = bbox
-    center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2
-        
-    # Displaying bounding box, label.
-    cv2.rectangle(frame_left, (x1, y1), (x2, y2), (0, 255, 0), 2)
-    cv2.putText(frame_left, label, (x1+5, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
-    cv2.putText(frame_left, label, (x1+5, y1+15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+def find_pallet_tunnel_center(detections, y_tolerance=20):
+    # Detects the pallet blocks and calculates the midpoint between them.
+    # The midpoint should land in the center of the pallet tunnel.
+    # IF only the left and right block are detected, the midpoint will land at the center block.
+
+    # Filter detections for blocks only
+    block_detections = [d for d in detections if "block" in d[4].lower()]
+    tunnel_center_points = []
+
+    # Sort blocks by their y1 coordinate (top of the bounding box)
+    block_detections.sort(key=lambda b: b[1])
+
+    # Pair blocks based on y-level proximity
+    for i, block1 in enumerate(block_detections):
+        x1_1, y1_1, x2_1, y2_1, _, _ = block1
+        mid_x1, mid_y1 = (x1_1 + x2_1) // 2, (y1_1 + y2_1) // 2
+
+        for j, block2 in enumerate(block_detections[i + 1:], start=i + 1):
+            x1_2, y1_2, x2_2, y2_2, _, _ = block2
+            mid_x2, mid_y2 = (x1_2 + x2_2) // 2, (y1_2 + y2_2) // 2
+
+            # Check if the blocks are at roughly the same y-level
+            if abs(mid_y1 - mid_y2) <= y_tolerance:
+                # Calculate the midpoint between the two blocks
+                mid_x = (mid_x1 + mid_x2) // 2
+                mid_y = (mid_y1 + mid_y2) // 2
+                tunnel_center_points.append((mid_x, mid_y))
+                    
+    return tunnel_center_points
+
+def calculate_camera_offset(frame_center, tunnel_center_points):
+    if not tunnel_center_points:
+        return (None, None)
     
-    # Draw midpoint circle.
-    cv2.circle(frame_left, (center_x, center_y), 4, (0, 0, 255), -1)
+    # Find the closest tunnel center point
+    closest_tunnel_center = min(tunnel_center_points, key=lambda p: (p[0] - frame_center[0])**2 + (p[1] - frame_center[1])**2)
 
-    # Draw arrows from borders to the center.
-    # cv2.arrowedLine(frame_left, (x1, center_y), (center_x//2, center_y), (255, 0, 0), 2, tipLength=0.2)  # Horizontal arrow
-    # cv2.arrowedLine(frame_left, (center_x//2, y1), (center_x//2, center_y), (0, 255, 255), 2, tipLength=0.2)  # Vertical arrow
+    # Calculate the offset in pixels
+    offset_x = closest_tunnel_center[0] - frame_center[0]
+    offset_y = closest_tunnel_center[1] - frame_center[1]
 
-    # Displaying depth besides the midpoint circle if depth is valid.
-    if depth is not None:
-        depth_text = f"{obj['depth']:.2f}m"
-        cv2.putText(frame_left, depth_text, (center_x - 20, center_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
-        cv2.putText(frame_left, depth_text, (center_x - 20, center_y + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+    return (offset_x, offset_y), closest_tunnel_center
 
+# Visualization
+def visualization(frame_left, object_data, tunnel_center_points, frame_center, camera_offset, closest_tunnel_center, tunnel_depth):
+    # ------ Bounding box visualization ------ #
+    for obj in object_data.values():
+        bbox, label, depth = obj["BoundingBox"], obj["label"], obj["depth"]
+        x1, y1, x2, y2 = bbox
+        center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2
+            
+        # Displaying bounding box, label.
+        cv2.rectangle(frame_left, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        
+        # Draw bounding box midpoint circle.
+        cv2.circle(frame_left, (center_x, center_y), 4, (0, 0, 255), -1)
+
+        # Displaying depth besides the midpoint circle if depth is valid.
+        if depth is not None:
+            depth_text = f"{obj['depth']:.2f}m"
+            cv2.putText(frame_left, depth_text, (center_x - 20, center_y + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)  # Bottom depth text
+            
+            if label.split()[0] != 'block':
+                cv2.putText(frame_left, label, (x1+5, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+                cv2.putText(frame_left, label, (x1+5, y1+15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+                cv2.putText(frame_left, depth_text, (center_x - 20, center_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)    # Top depth text
+    #------------------------------------------#
+
+    # ------ Pallet Tunnel Center Visualization ------ #
+    for mid_x, mid_y in tunnel_center_points:
+        cv2.circle(frame_left, (mid_x, mid_y), 5, (255, 0, 0), -1)
+    # Add this inside the visualization function
+    for mid_x, mid_y, depth in tunnel_depth:
+        if depth is not None:
+            depth_text = f"{depth:.2f}m"
+            cv2.putText(frame_left, depth_text, (mid_x + 10, mid_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+    #--------------------------------------------------#
+
+    # ------ Draw 'x' in the center of the frame ------ #
+    camera_offset_color = (255, 0, 255)
+    frame_center_x, frame_center_y = frame_center[0], frame_center[1]
+    cv2.line(frame_left, (frame_center_x - cross_size, frame_center_y - cross_size), 
+            (frame_center_x + cross_size, frame_center_y + cross_size), camera_offset_color, cross_width)
+    cv2.line(frame_left, (frame_center_x - cross_size, frame_center_y + cross_size), 
+            (frame_center_x + cross_size, frame_center_y - cross_size), camera_offset_color, cross_width)
+    #---------------------------------------------------#
+
+    # ------ Visualize camera offset to pallet center ------ #
+    if camera_offset:
+        offset_x, offset_y = camera_offset[0], camera_offset[1]
+        cv2.putText(frame_left, f"Offset: ({offset_x}, {offset_y}) [pixels]", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, camera_offset_color, 2)
+        # Draw arrows pointing to the tunnel center
+        cv2.arrowedLine(frame_left, frame_center, (closest_tunnel_center[0], frame_center_y), camera_offset_color, 2, tipLength=0.2)  # X-axis arrow
+        cv2.arrowedLine(frame_left, frame_center, (frame_center_x, closest_tunnel_center[1]), camera_offset_color, 2, tipLength=0.2)  # Y-axis arrow
+        # Display offset values near the arrows
+        cv2.putText(frame_left, f"X: {offset_x}", (closest_tunnel_center[0] + 10, frame_center_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, camera_offset_color, 2)
+        cv2.putText(frame_left, f"Y: {offset_y}", (frame_center_x + 10, closest_tunnel_center[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, camera_offset_color, 2)
+    #--------------------------------------------------------#
+
+# Show camera feed
 def display(frame_left, depthmap, disparitymap):
         # Crop window
         crop_left, crop_right = (340, 0)
@@ -244,8 +347,8 @@ def display(frame_left, depthmap, disparitymap):
         depthmap_cropped = depthmap[:, crop_left:depthmap.shape[1] - crop_right]
 
         # Show camera feed
-        cv2.imshow("Disparity Map", disparitymap_cropped)
-        cv2.imshow("Depth Map", depthmap_cropped)
+        # cv2.imshow("Disparity Map", disparitymap_cropped)
+        # cv2.imshow("Depth Map", depthmap_cropped)
         cv2.imshow("Left Camera - Object Detection + Depth", frame_left)
 
 # --------------------------- END DEFINITIONS ----------------------------- #
@@ -260,13 +363,17 @@ def display(frame_left, depthmap, disparitymap):
 camera_left, camera_right = init_cameras(LCameraID, RCameraID, width, height, brightness_value)
 set_processor(yolo_model, pallet_model, processor)
 
+# Read the first frame to calculate center of the frame
+_, frame_left = camera_left.read()
+frame_center = (frame_left.shape[1] // 2, frame_left.shape[0] // 2)     # Calculate the center of the frame
+
 ## ---- MAIN LOOP ---- ##
-print("Visualizing...")
 frame_time = 1 / fps
+print("Visualizing... (press 'Q' to stop)")
 while camera_left.isOpened() and camera_right.isOpened():
     _, frame_left = camera_left.read()
     _, frame_right = camera_right.read()
-
+    
     # Calculate the disparity for the combined image
     disparity, disparitymap = disparity_calculation(frame_left, frame_right)
 
@@ -279,11 +386,19 @@ while camera_left.isOpened() and camera_right.isOpened():
 
     # Depth map
     depthmap = depth_map(disparity, camera_propeties, scale_factor)
-
-    # Visualize bounding boxes, labels and depth
-    for obj in object_data.values():
-        draw_visuals(frame_left, obj["BoundingBox"], obj["label"], obj["depth"])
     
+    # Find pallet tunnel center
+    tunnel_center_points = find_pallet_tunnel_center(all_detections)
+
+    # Calculate camera offset to the pallet tunnel center
+    camera_offset, closest_tunnel_center = calculate_camera_offset(frame_center, tunnel_center_points)
+
+    # Calculate tunnel depth
+    tunnel_depth = calculate_tunnel_depth(camera_propeties, scale_factor, disparity, tunnel_center_points)
+
+    # Visualize
+    visualization(frame_left, object_data, tunnel_center_points, frame_center, camera_offset, closest_tunnel_center, tunnel_depth)
+
     # Display figures
     display(frame_left, depthmap, disparitymap)
 
