@@ -46,7 +46,7 @@ fps = 30                        # Frames per second
 brightness_value = 120          # (0-255)
 width = 720; height = width     
 depth_distance = 20             # Maximum distance for depth calculation (in meters)
-scale_factor = 1.9                # Scale factor for depth calculation
+scale_factor = 1.9              # Scale factor for depth calculation
 remove_time = 0.1               # Time (in seconds) after which an object is considered 'stale' and removed
 object_threshold = 0.4          # Confidence threshold for object detection
 pallet_threshold = 0.6          # Confidence threshold for pallet detection
@@ -124,6 +124,7 @@ def run_detection(frame, model, conf_threshold, target_class):
             BoundingBox.append((x1, y1, x2, y2, label, class_id))
     return BoundingBox
 
+# Created for validation script, will be remove later
 def append_depth_values(depthdata):
     file_path = "Validation/Depth_data/depth_values.txt"; data = []
     start_meter = 10
@@ -202,11 +203,10 @@ def disparity_calculation(frame_left, frame_right):
     # Disparity calculation for the whole scene
     disparity = stereoSGBM.compute(gray_left, gray_right).astype(np.float32) / 16.0
 
-    # Clip disparity values to resonable values
-    disparity = np.clip(disparity, 0.01, 255)
-
+    # Clip disparity values to resonable values for disparity map
+    disparitymap_clip = np.clip(disparity, 0.01, 255)
     # Normalize depth and apply color for visualization
-    disparity_normalized = cv2.normalize(disparity, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    disparity_normalized = cv2.normalize(disparitymap_clip, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
     disparitymap = cv2.applyColorMap(disparity_normalized, cv2.COLORMAP_CIVIDIS)
 
     return disparity, disparitymap
@@ -271,7 +271,7 @@ while camera_left.isOpened() and camera_right.isOpened():
     disparity, disparitymap = disparity_calculation(frame_left, frame_right)
 
     # Run object and pallet detection
-    all_detections = run_detection(frame_left, yolo_model, object_threshold, target_class=None) + run_detection(frame_left, pallet_model, pallet_threshold, target_class)
+    all_detections = run_detection(frame_left, yolo_model, object_threshold, target_class) + run_detection(frame_left, pallet_model, pallet_threshold, target_class)
 
     # Object Depth Calculations
     object_data = depth_calculation(all_detections, disparity, camera_propeties, scale_factor)
