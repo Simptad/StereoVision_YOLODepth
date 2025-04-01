@@ -19,16 +19,16 @@ if __name__ == '__main__':
 
         else:
             # Load the saved model
-            model = YOLO("training/palletbox_trained.pt")
+            model = YOLO("training/blocktunnel_trained.pt")
 
             # Resume training for additional epochs
             model.train(data="training/trainingdata.yaml", epochs=resume_nmbr, imgsz=640, resume=True)
 
     except KeyboardInterrupt:
         print("Training stopped by user. Saving the model...")
-        model.save(r"training/palletbox_trained.pt")
-        print("Model saved as 'palletbox_trained.pt'")
+        model.save(r"training/blocktunnel_trained.pt")
+        print("Model saved as 'blocktunnel_trained.pt'")
 
     # Save the trained model weights
-    model.save(r"training/palletbox_trained.pt")
-    print("Model saved as 'palletbox_trained.pt'")
+    model.save(r"training/blocktunnel_trained.pt")
+    print("Model saved as 'blocktunnel_trained.pt'")
