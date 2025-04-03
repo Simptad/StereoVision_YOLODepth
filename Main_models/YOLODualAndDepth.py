@@ -226,6 +226,7 @@ def find_tunnel_center(detections):
     # Checks if the center of a "tunnel" or "block" is inside of a pallet bounding box
     tunnel_center_points = []
     is_inside_tunnel = []
+    tunnel_coords = []
     detected_pallets = [d for d in detections if "pallet" in d[4].lower()]  # Find all pallet detections
 
     for x1, y1, x2, y2, label, *_ in detections:
@@ -236,8 +237,9 @@ def find_tunnel_center(detections):
             is_inside_tunnel = is_inside((mid_x, mid_y), detected_pallets)
             if is_inside_tunnel:
                 tunnel_center_points.append((mid_x, mid_y))
+                tunnel_coords.append((x1, y1, x2, y2))
 
-    return tunnel_center_points, is_inside_tunnel
+    return tunnel_center_points, is_inside_tunnel, tunnel_coords
 
 # Finds the tunnel center from the detection of pallet "blocks"
 def find_tunnel_center_blocks(detections, y_tolerance=20):
@@ -309,50 +311,54 @@ def calculate_camera_offset(frame_center, tunnel_center_points, tunnel_center_po
 
     return offset_length, closest_tunnel_center, offset_angle
 
+
 # Visualization
 def visualization(frame_left, object_data, tunnel_center_points, frame_center, camera_offset, closest_tunnel_center, tunnel_center_points_blocks, angle_offset,
-                  is_inside_tunnel, is_inside_blocks):
+                  is_inside_tunnel, is_inside_blocks, tunnel_coords):
     # ------ Bounding box visualization ------ #
     tunnel_detected = False
-    
-    # Draws 'tunnel' if its found inside of a 'pallet'
-    for obj in object_data.values():
-        # Gets all object data
-        label = obj["label"]
-        bbox, depth = obj["BoundingBox"], obj["depth"]
-        x1, y1, x2, y2 = bbox
-        center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2            
 
-        if "tunnel" in label.lower():
-            tunnel_detected = True
-            # Checks if 'tunnel' is inside of pallet bounding box
-            if is_inside_tunnel:
-                # Draw the bounding box and midpoint only if inside a pallet
-                cv2.rectangle(frame_left, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.circle(frame_left, (center_x, center_y), 4, (0, 0, 255), -1)
-                cv2.putText(frame_left, label, (x1 + 5, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)  # Top Label text
+    for tunnel_coord in tunnel_coords:
+        x1t, y1t, x2t, y2t = tunnel_coord  # Extract each set of coordinates
 
-                if obj["depth"] is not None:
-                    depth_text = f"{obj['depth']:.2f}m"
-                    cv2.putText(frame_left, depth_text, (x1 + 5, y2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)  # Depth below boundingbox
-                
-                # Draw center circle
-                for mid_x, mid_y in tunnel_center_points:
-                    color = camera_offset_color if closest_tunnel_center and (mid_x, mid_y) == closest_tunnel_center else blue
-                    cv2.circle(frame_left, (mid_x, mid_y), 5, color, -1)
+        # Draws 'tunnel' if its found inside of a 'pallet'
+        for obj in object_data.values():
+            # Gets all object data
+            label = obj["label"]
+            bbox, depth = obj["BoundingBox"], obj["depth"]
+            x1, y1, x2, y2 = bbox
+            center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2
 
-        # Draw everything else (objects that are neither tunnels nor blocks)
-        elif "block" not in label.lower():
-            cv2.rectangle(frame_left, (x1, y1), (x2, y2), green, 2)
+            if "tunnel" in label:
+                center_xt, center_yt = (x1t + x2t) // 2, (y1t + y2t) // 2
+                tunnel_detected = True
+                # Checks if 'tunnel' is inside of pallet bounding box
+                if is_inside_tunnel:
+                    cv2.rectangle(frame_left, (x1t, y1t), (x2t, y2t), (0, 255, 0), 2)
+                    cv2.circle(frame_left, (center_xt, center_yt), 4, (0, 0, 255), -1)
+                    cv2.putText(frame_left, label, (x1t + 5, y1t - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)  # Top Label text
+
+                    if obj["depth"] is not None:
+                        depth_text = f"{obj['depth']:.2f}m"
+                        cv2.putText(frame_left, depth_text, (x1t + 5, y2t + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)  # Depth below boundingbox
+                    
+                    # Draw closest tunnel center circle with the color "camera_offset_color"
+                    for mid_x, mid_y in tunnel_center_points:
+                        color = camera_offset_color if closest_tunnel_center and (mid_x, mid_y) == closest_tunnel_center else blue
+                        cv2.circle(frame_left, (mid_x, mid_y), 5, color, -1)
             
-            # Draw bounding box midpoint circle
-            cv2.circle(frame_left, (center_x, center_y), 4, red, -1)
-            cv2.putText(frame_left, label, (x1+5, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, black, 2)  # Top Label text
-            cv2.putText(frame_left, label, (x1+5, y1+15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, white, 2)  # Bottom Label text
-        
-            if depth is not None:
-                depth_text = f"{obj['depth']:.2f}m"
-                cv2.putText(frame_left, depth_text, (x1 + 5, y2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, white, 1)  # Depth below bounding box
+            # Draw everything else (objects that are neither tunnels nor blocks)
+            elif "block" not in label:
+                cv2.rectangle(frame_left, (x1, y1), (x2, y2), green, 2)
+                
+                # Draw bounding box midpoint circle
+                cv2.circle(frame_left, (center_x, center_y), 4, red, -1)
+                cv2.putText(frame_left, label, (x1+5, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, black, 2)  # Top Label text
+                cv2.putText(frame_left, label, (x1+5, y1+15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, white, 2)  # Bottom Label text
+            
+                if depth is not None:
+                    depth_text = f"{obj['depth']:.2f}m"
+                    cv2.putText(frame_left, depth_text, (x1 + 5, y2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, white, 1)  # Depth below bounding box
 
     # Draws 'block' if its found inside of a 'pallet' and "tunnel" is not found
     if not tunnel_detected:
@@ -362,7 +368,7 @@ def visualization(frame_left, object_data, tunnel_center_points, frame_center, c
             bbox, depth = obj["BoundingBox"], obj["depth"]
             x1, y1, x2, y2 = bbox
             center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2 
-
+            
             if "block" in label.lower():
                 if is_inside_blocks:
                     cv2.rectangle(frame_left, (x1, y1), (x2, y2), (0, 255, 0), 2)
@@ -471,23 +477,22 @@ while camera_left.isOpened() and camera_right.isOpened():
     
     # Find pallet tunnel center
     tunnel_center_points_blocks, is_inside_blocks= find_tunnel_center_blocks(all_detections)
-    tunnel_center_points, is_inside_tunnel = find_tunnel_center(all_detections)
+    tunnel_center_points, is_inside_tunnel, tunnel_coords = find_tunnel_center(all_detections)
 
     # Calculate camera offset to the pallet tunnel center
     camera_offset, closest_tunnel_center, camera_angle_offset = calculate_camera_offset(frame_center, tunnel_center_points, tunnel_center_points_blocks, disparity)
 
     # Visualize
     visualization(frame_left, object_data, tunnel_center_points, frame_center, camera_offset, closest_tunnel_center, tunnel_center_points_blocks, camera_angle_offset,
-                  is_inside_tunnel, is_inside_blocks)
+                  is_inside_tunnel, is_inside_blocks, tunnel_coords)
 
     # Display figures
     display(frame_left, depthmap, disparitymap)
 
     # Breaks out of the loop when pressing 'Q' and stopping code
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    if cv2.waitKey(int(frame_time * 1000)) & 0xFF == ord('q'):
         print("\033[91mStopping...\033[0m\n")
         break
-    cv2.waitKey(int(frame_time * 1000))
 ## ------- END MAIN LOGIC ------- ##
 
 # Stop and Quit
