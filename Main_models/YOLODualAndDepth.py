@@ -40,7 +40,7 @@ print('\t\033[92mImport \u2714\033[0m')
 remove_time = 0.2               # Time (in seconds) after which an object is considered 'stale' and removed
 object_threshold = 0.5          # Confidence threshold for object detection
 pallet_threshold = 0.7          # Confidence threshold for pallet detection
-blocktunnel_threshold = 0.6     # Confidence treshhold for tunnel and block detection
+blocktunnel_threshold = 0.1     # Confidence treshhold for tunnel and block detection
 
 # Path to .pt files (trained_model, threshold)
 models = [
@@ -155,6 +155,7 @@ def run_detection(frame, model, conf_threshold, target_class):
             BoundingBox.append((x1, y1, x2, y2, label, class_id))
     return BoundingBox
 
+
 # Object Depth Calculation
 def depth_calculation(detections, disparity, camera_propeties, scale_factor):
         latest_depth = None
@@ -207,6 +208,7 @@ def disparity_calculation(frame_left, frame_right):
 
     # Clip disparity values to resonable values for disparity map
     disparitymap_clip = np.clip(disparity, 0.01, 255)
+
     # Normalize depth and apply color for visualization
     disparity_normalized = cv2.normalize(disparitymap_clip, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
     disparitymap = cv2.applyColorMap(disparity_normalized, cv2.COLORMAP_CIVIDIS)
@@ -227,6 +229,7 @@ def find_tunnel_center(detections):
     tunnel_center_points = []
     is_inside_tunnel = []
     tunnel_coords = []
+
     detected_pallets = [d for d in detections if "pallet" in d[4].lower()]  # Find all pallet detections
 
     for x1, y1, x2, y2, label, *_ in detections:
@@ -332,6 +335,7 @@ def visualization(frame_left, object_data, tunnel_center_points, frame_center, c
             if "tunnel" in label:
                 center_xt, center_yt = (x1t + x2t) // 2, (y1t + y2t) // 2
                 tunnel_detected = True
+
                 # Checks if 'tunnel' is inside of pallet bounding box
                 if is_inside_tunnel:
                     cv2.rectangle(frame_left, (x1t, y1t), (x2t, y2t), (0, 255, 0), 2)
@@ -347,19 +351,6 @@ def visualization(frame_left, object_data, tunnel_center_points, frame_center, c
                         color = camera_offset_color if closest_tunnel_center and (mid_x, mid_y) == closest_tunnel_center else blue
                         cv2.circle(frame_left, (mid_x, mid_y), 5, color, -1)
             
-            # Draw everything else (objects that are neither tunnels nor blocks)
-            elif "block" not in label:
-                cv2.rectangle(frame_left, (x1, y1), (x2, y2), green, 2)
-                
-                # Draw bounding box midpoint circle
-                cv2.circle(frame_left, (center_x, center_y), 4, red, -1)
-                cv2.putText(frame_left, label, (x1+5, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, black, 2)  # Top Label text
-                cv2.putText(frame_left, label, (x1+5, y1+15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, white, 2)  # Bottom Label text
-            
-                if depth is not None:
-                    depth_text = f"{obj['depth']:.2f}m"
-                    cv2.putText(frame_left, depth_text, (x1 + 5, y2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, white, 1)  # Depth below bounding box
-
     # Draws 'block' if its found inside of a 'pallet' and "tunnel" is not found
     if not tunnel_detected:
         for obj in object_data.values():
@@ -383,6 +374,23 @@ def visualization(frame_left, object_data, tunnel_center_points, frame_center, c
                     for mid_x, mid_y in tunnel_center_points_blocks: 
                         color = camera_offset_color if closest_tunnel_center and (mid_x, mid_y) == closest_tunnel_center else red
                         cv2.circle(frame_left, (mid_x, mid_y), 5, color, -1)
+
+    # Draws everything else
+    for obj in object_data.values():
+        label = obj["label"]
+        bbox, depth = obj["BoundingBox"], obj["depth"]
+        x1, y1, x2, y2 = bbox
+        center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2
+
+        if "block" not in label.lower() and "tunnel" not in label.lower():
+            cv2.rectangle(frame_left, (x1, y1), (x2, y2), green, 2)
+            cv2.circle(frame_left, (center_x, center_y), 4, red, -1)
+            cv2.putText(frame_left, label, (x1 + 5, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, black, 2)  # Top Label text
+            cv2.putText(frame_left, label, (x1 + 5, y1 + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, white, 2)  # Bottom Label text
+
+            if depth is not None:
+                depth_text = f"{obj['depth']:.2f}m"
+                cv2.putText(frame_left, depth_text, (x1 + 5, y2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, white, 1)  # Depth below bounding box
     # ------------------------------------------ #
 
     # ------ Draw 'x' in the center of the camera frame ------ #
@@ -422,9 +430,9 @@ def display(frame_left, depthmap, disparitymap):
         crop_left, crop_right = (340, 0)
 
         # Disparity Map
-        disparitymap_cropped = disparitymap[:, crop_left:disparitymap.shape[1] - crop_right]
+        # disparitymap_cropped = disparitymap[:, crop_left:disparitymap.shape[1] - crop_right]
         # Depth Map
-        depthmap_cropped = depthmap[:, crop_left:depthmap.shape[1] - crop_right]
+        # depthmap_cropped = depthmap[:, crop_left:depthmap.shape[1] - crop_right]
 
         # Show camera feed
         # cv2.imshow("Disparity Map", disparitymap_cropped)
@@ -447,12 +455,8 @@ set_processor(models, processor)
 _, frame_left = camera_left.read()
 frame_center = (frame_left.shape[1] // 2, frame_left.shape[0] // 2)     # Calculate the center of the frame
 
-# Deques to store the last 10 values
-latest_offset = deque(maxlen=smoothing)
-latest_angle_offset = deque(maxlen=smoothing)
-
 ## ---- MAIN LOOP ---- ##
-frame_time = 1 / fps
+frame_time = 1/fps
 print("Visualizing... (press 'Q' to stop)")
 while camera_left.isOpened() and camera_right.isOpened():
     _, frame_left = camera_left.read()
@@ -464,13 +468,13 @@ while camera_left.isOpened() and camera_right.isOpened():
     # Run object and pallet detection
     all_detections = []
     for model, threshold in models:
-        # detection = run_detection(frame_left, yolo_model, object_threshold, target_class)+run_detection(frame_left, pallet_model, pallet_threshold, target_class)+run_detection(frame_left, pallets_model, pallet_threshold, target_class)
         detection = run_detection(frame_left, model, threshold, target_class)
         all_detections.extend(detection)
 
     # Object Depth Calculations
     object_data = depth_calculation(all_detections, disparity, camera_propeties, scale_factor)
     object_data = {k: v for k, v in object_data.items() if time.time() - v["last_seen"] < remove_time}  # Remove objects that haven't been seen in 'remove_time' seconds
+    # clean_object_data(object_data, remove_time)
 
     # Depth map
     depthmap = depth_map(disparity, camera_propeties, scale_factor)
