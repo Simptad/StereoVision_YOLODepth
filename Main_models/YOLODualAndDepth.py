@@ -1,5 +1,8 @@
 # Running YOLO on both cameras and calculating depth using stereo vision
-# YOLO is used on its own model and with a custom model trained on pallets
+# Using YOLO's own trained model together with custom models.
+# The custom models includes
+# - Pallet detection
+# - Pallet tunnel & pallet block detection
 
 print("\nStarting...")
 
@@ -12,13 +15,15 @@ import numpy as np
 from ultralytics import YOLO
 import logging
 import time
+import math
+from collections import deque
+
 logging.disable(logging.CRITICAL)   # Suppress YOLO console output
-import os
 
 # Load data
 calib_data = np.load("Calibration/stereo_calibration.npz")
 mtxL, distL, mtxR, distR = calib_data["mtxL"], calib_data["distL"], calib_data["mtxR"], calib_data["distR"]
-camera_propeties = [calib_data["FOCAL_LENGTH_L"], calib_data["BASELINE"]]
+camera_propeties = [calib_data["FOCAL_LENGTH_L"], calib_data["BASELINE"], 78]   # 78 Diagonal FoV [deg] (from manufacturer spec.)
 object_data = {}    # Initializing empty list
 print('\t\033[92mImport \u2714\033[0m')
 
@@ -31,12 +36,20 @@ print('\t\033[92mImport \u2714\033[0m')
 ###########################################################################
 ###########################################################################
 # ------------------- Global Variables and Parameters ------------------- #
-# Path to .pt files
-yolo_model = YOLO("yolo11n.pt")
-# pallet_model = YOLO("training/palletbox_trained.pt")
-pallet_model = YOLO("training/blocktunnel_trained.pt")
-target_class = ["person", "block", "tunnel"]          # Classes pallet {'block', 'tunnel'}.
-# target_class = None                       # Use this to detect all objects.
+# Object Detection
+remove_time = 0.2               # Time (in seconds) after which an object is considered 'stale' and removed
+object_threshold = 0.5          # Confidence threshold for object detection
+pallet_threshold = 0.7          # Confidence threshold for pallet detection
+blocktunnel_threshold = 0.6     # Confidence treshhold for tunnel and block detection
+
+# Path to .pt files (trained_model, threshold)
+models = [
+    (YOLO("yolo11n.pt"), object_threshold),
+    (YOLO("training/blocktunnel_trained.pt"), blocktunnel_threshold),
+    (YOLO("training/pallets_trained.pt"), pallet_threshold)
+]
+target_class = ["person", "block", "tunnel", "pallet"]          # Classes pallet {'block', 'tunnel'}.
+# target_class = None                                           # Use this to detect all objects.
 
 # Camera
 LCameraID = 1; RCameraID = 2    # Set camera ID (0 is for laptop camera, >0 is for external cameras)
@@ -46,21 +59,17 @@ width = 720; height = width     # Resolution [pixels]
 # Computing
 processor = 'GPU'               # 'CPU' or 'GPU'  
 fps = 30                        # Frames per second 
+smoothing = 10                  # Number of frames it calculates the mean of
 
 # Depth Estimation
 depth_distance = 20             # Maximum distance for depth calculation (in meters)
 scale_factor = 1.9              # Scale factor for depth calculation
 
-# Object Detection
-remove_time = 0.1               # Time (in seconds) after which an object is considered 'stale' and removed
-object_threshold = 0.5          # Confidence threshold for object detection
-pallet_threshold = 0.5          # Confidence threshold for pallet detection
-
 # Visualization
 cross_size = 5; cross_width = 2         # Center cross dimensions
 red = (0,0,255); green = (0,255,0); blue = (255,0,0)
 white = (255,255,255); black = (0,0,0);                     
-purple = (255, 0, 255)
+camera_offset_color = (255, 0, 255)
 
 
 # Disparity calculation
@@ -109,12 +118,22 @@ def init_cameras(LCameraID, RCameraID, w, h, bvalue):
     return camera_left, camera_right
 
 # Set processor for the models
-def set_processor(model1, model2, processor):
-    if processor == 'GPU':
-        model1.to('cuda'); model2.to('cuda')
-    else:
-        model1.to('cpu');  model2.to('cpu')
+def set_processor(models, processor):
+    for model, _ in models:
+        if processor == 'GPU':
+            model.to('cuda')
+        else:
+            model.to('cpu')
+
     print(f'\tRunning on {processor} at {fps} FPS.')
+
+# Calculate the cameras horizontal and vertical field of view.
+def calculate_fov(diagonal_fov, height, width):
+
+    horizontal_fov = diagonal_fov*(height/math.sqrt(width**2+height**2))
+    vertical_fov = diagonal_fov*(width/math.sqrt(width**2+height**2))
+    
+    return horizontal_fov, vertical_fov
 
 # Object Detection
 def run_detection(frame, model, conf_threshold, target_class):
@@ -136,41 +155,6 @@ def run_detection(frame, model, conf_threshold, target_class):
             BoundingBox.append((x1, y1, x2, y2, label, class_id))
     return BoundingBox
 
-# # Created for validation script, will be remove later
-# def append_depth_values(depthdata):
-#     file_path = "Validation/Depth_data/depth_values.txt"; data = []
-#     start_meter = 10
-
-#     depth, depth_new = depthdata[0], depthdata[1]
-#     data.append(f"Before: {depth:.3f}\n")
-#     data.append(f"After: {depth_new:.3f}\n")
-
-#     # Ensure the file exists before reading
-#     if not os.path.exists(file_path):
-#         with open(file_path, "w") as file:
-#             file.write("")  # Create an empty file if it doesn't exist
-    
-#     # Open the file in read mode to check existing content
-#     with open(file_path, "r") as file:
-#         content = file.readlines()
-    
-#     # Open the file in write mode to modify or append content
-#     with open(file_path, "w") as file:
-#         found_section = False
-#         # Write existing content back, looking for the specified meter section
-#         for line in content:
-#             file.write(line)
-#             if line.strip() == f"({start_meter}) meter":
-#                 found_section = True
-        
-#         # If the section wasn't found, add a new section header
-#         if not found_section:
-#             file.write(f"\n({start_meter}) meter\n")
-        
-#     # Open the file again in append mode to add the data without overwriting
-#     with open(file_path, "a") as file:
-#         file.writelines(data)
-
 # Object Depth Calculation
 def depth_calculation(detections, disparity, camera_propeties, scale_factor):
         latest_depth = None
@@ -180,7 +164,7 @@ def depth_calculation(detections, disparity, camera_propeties, scale_factor):
 
             # Filter invalid disparities
             valid_disparities = RoI[(RoI > 0) & (RoI < 255)]
-            disparity = cv2.bilateralFilter(disparity.astype(np.uint8), 9, 75, 75)
+            # disparity = cv2.bilateralFilter(disparity.astype(np.uint8), 9, 75, 75)
             if valid_disparities.size > 0:
                 depth = (camera_propeties[0] * camera_propeties[1]) / (np.median(valid_disparities) * scale_factor)/100
                 depth = (-0.7388+np.sqrt(0.7388**2-4*0.0478*(0.3123-depth)))/(2*0.0478)     # Adjusted depth
@@ -200,7 +184,7 @@ def depth_calculation(detections, disparity, camera_propeties, scale_factor):
 def depth_map(disparity, camera_propeties, scale_factor):
     # Calculated the depth map
     disparity[disparity <= 0] = 0.1
-    depthmap_values = (camera_propeties[0] * camera_propeties[1]) / (disparity * scale_factor)/100
+    depthmap_values = (camera_propeties[0] * camera_propeties[1]) / (disparity*scale_factor*100)
     depthmap_values = (-0.7388+np.sqrt(0.7388**2-4*0.0478*(0.3123-depthmap_values)))/(2*0.0478)
     
     # Clip depth values to a reasonable range
@@ -229,15 +213,31 @@ def disparity_calculation(frame_left, frame_right):
 
     return disparity, disparitymap
 
+# Checks if the center of "tunnel" or "block" is inside of pallet
+def is_inside(center, detection):
+    cx, cy = center
+    for x1, y1, x2, y2, label, *_ in detection:
+        if x1 <= cx <= x2 and y1 <= cy <= y2:
+            return True
+    return False
+
 # Finds the tunnel center from the detection of pallet "tunnel"
 def find_tunnel_center(detections):
+    # Checks if the center of a "tunnel" or "block" is inside of a pallet bounding box
     tunnel_center_points = []
+    is_inside_tunnel = []
+    detected_pallets = [d for d in detections if "pallet" in d[4].lower()]  # Find all pallet detections
+
     for x1, y1, x2, y2, label, *_ in detections:
         if "tunnel" in label.lower():
             mid_x = (x1 + x2) // 2
             mid_y = (y1 + y2) // 2
-            tunnel_center_points.append((mid_x, mid_y))
-    return tunnel_center_points
+
+            is_inside_tunnel = is_inside((mid_x, mid_y), detected_pallets)
+            if is_inside_tunnel:
+                tunnel_center_points.append((mid_x, mid_y))
+
+    return tunnel_center_points, is_inside_tunnel
 
 # Finds the tunnel center from the detection of pallet "blocks"
 def find_tunnel_center_blocks(detections, y_tolerance=20):
@@ -245,9 +245,11 @@ def find_tunnel_center_blocks(detections, y_tolerance=20):
     # The midpoint should land in the center of the pallet tunnel.
     # IF only the left and right block are detected, the midpoint will land at the center block.
 
-    # Filter detections for blocks only
+    # Find all block and pallet detections
     block_detections = [d for d in detections if "block" in d[4].lower()]
+    detected_pallets = [d for d in detections if "pallet" in d[4].lower()]
     tunnel_center_points_blocks = []
+    is_inside_blocks = []
 
     # Sort blocks by their y1 coordinate (top of the bounding box)
     block_detections.sort(key=lambda b: b[1])
@@ -266,101 +268,147 @@ def find_tunnel_center_blocks(detections, y_tolerance=20):
                 # Calculate the midpoint between the two blocks
                 mid_x_blocks = (mid_x1 + mid_x2) // 2
                 mid_y_blocks = (mid_y1 + mid_y2) // 2
-                tunnel_center_points_blocks.append((mid_x_blocks, mid_y_blocks))
-    return tunnel_center_points_blocks
+
+                # Checks if center points are inside of 'pallet'
+                is_inside_blocks = is_inside((mid_x_blocks, mid_y_blocks), detected_pallets)
+                if is_inside_blocks:
+                    tunnel_center_points_blocks.append((mid_x_blocks, mid_y_blocks))
+
+    return tunnel_center_points_blocks, is_inside_blocks
 
 # Calculates the camera offset from the frame center to the closest pallet tunnel
-def calculate_camera_offset(frame_center, tunnel_center_points, tunnel_center_points_blocks, camera_propeties, disparity):
+def calculate_camera_offset(frame_center, tunnel_center_points, tunnel_center_points_blocks, disparity):
     # Global variabel for the depth offset from the camera center to pallet tunnel
-    global latest_valid_offset
 
     # Find the closest center point to the frame center
     combined_center_points = tunnel_center_points + tunnel_center_points_blocks
     if combined_center_points:
         closest_tunnel_center = min(combined_center_points,key=lambda p: (p[0] - frame_center[0])**2 + (p[1] - frame_center[1])**2)
-        closest_depth = disparity[closest_tunnel_center[1], closest_tunnel_center[0]]
+        closest_disp = disparity[closest_tunnel_center[1], closest_tunnel_center[0]]
     else:
-        closest_tunnel_center, closest_depth = None, None
+        closest_tunnel_center, closest_disp = None, 0
 
-    # Calculate the offset in pixels
-    if closest_tunnel_center:
+    if 0 < closest_disp < 255: 
+        valid_disp = closest_disp 
+    else: 
+        valid_disp = None
+
+    if valid_disp and closest_tunnel_center:
+        # Fetch cameras horizontal and vertical FoV
+        horizontal_fov, vertical_fov = calculate_fov(camera_propeties[2], height, width)
+
         offset_x_pixels = closest_tunnel_center[0] - frame_center[0]
         offset_y_pixels = closest_tunnel_center[1] - frame_center[1]
+        offset_angle_x = offset_x_pixels*(horizontal_fov/width)
+        offset_angle_y = offset_y_pixels*(vertical_fov/height)
+
+        offset_length = (offset_x_pixels, offset_y_pixels)
+        offset_angle = (round(offset_angle_x, 2), round(offset_angle_y, 2))
     else:
-        offset_x_pixels, offset_y_pixels = None, None
+        offset_length, offset_angle = (None, None), (None, None)
 
-    # Convert pixel offset to centimeters
-    focal_length = camera_propeties[0]  # Focal length in pixels
-    baseline = camera_propeties[1]     # Baseline in meters
-
-    if closest_depth is not None and closest_depth > 0 and closest_depth < 200:
-        offset_x_cm = (offset_x_pixels * closest_depth * baseline * 100) / focal_length
-        offset_y_cm = (offset_y_pixels * closest_depth * baseline * 100) / focal_length
-        offset = (int(offset_x_cm), int(offset_y_cm))
-        latest_valid_offset = offset
-    elif latest_valid_offset is not None:
-        offset = latest_valid_offset  # Use last valid offset
-    else:
-        offset = (0, 0)    # Default to (0,0) if no valid offset exists
-
-    return offset, closest_tunnel_center
+    return offset_length, closest_tunnel_center, offset_angle
 
 # Visualization
-def visualization(frame_left, object_data, tunnel_center_points, frame_center, camera_offset, closest_tunnel_center, tunnel_center_points_blocks):
+def visualization(frame_left, object_data, tunnel_center_points, frame_center, camera_offset, closest_tunnel_center, tunnel_center_points_blocks, angle_offset,
+                  is_inside_tunnel, is_inside_blocks):
     # ------ Bounding box visualization ------ #
+    tunnel_detected = False
+    
+    # Draws 'tunnel' if its found inside of a 'pallet'
     for obj in object_data.values():
-        bbox, label, depth = obj["BoundingBox"], obj["label"], obj["depth"]
+        # Gets all object data
+        label = obj["label"]
+        bbox, depth = obj["BoundingBox"], obj["depth"]
         x1, y1, x2, y2 = bbox
-        center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2
-            
-        # Displaying bounding box.
-        cv2.rectangle(frame_left, (x1, y1), (x2, y2), green, 2)
-        
-        # Draw bounding box midpoint circle.
-        cv2.circle(frame_left, (center_x, center_y), 4, red, -1)
+        center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2            
 
-        # Draw bounding box labels and confidence score
-        if label.split()[0] == 'block' or label.split()[0] == 'tunnel':
-            cv2.putText(frame_left, label, (x1+5, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, white, 2)                      # Top Label text
-        else:
-            cv2.putText(frame_left, label, (x1+5, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, black, 2)                          # Top Label text
-            cv2.putText(frame_left, label, (x1+5, y1+15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, white, 2)                    # Bottom Label text
+        if "tunnel" in label.lower():
+            tunnel_detected = True
+            # Checks if 'tunnel' is inside of pallet bounding box
+            if is_inside_tunnel:
+                # Draw the bounding box and midpoint only if inside a pallet
+                cv2.rectangle(frame_left, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.circle(frame_left, (center_x, center_y), 4, (0, 0, 255), -1)
+                cv2.putText(frame_left, label, (x1 + 5, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)  # Top Label text
+
+                if obj["depth"] is not None:
+                    depth_text = f"{obj['depth']:.2f}m"
+                    cv2.putText(frame_left, depth_text, (x1 + 5, y2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)  # Depth below boundingbox
+                
+                # Draw center circle
+                for mid_x, mid_y in tunnel_center_points:
+                    color = camera_offset_color if closest_tunnel_center and (mid_x, mid_y) == closest_tunnel_center else blue
+                    cv2.circle(frame_left, (mid_x, mid_y), 5, color, -1)
+
+        # Draw everything else (objects that are neither tunnels nor blocks)
+        elif "block" not in label.lower():
+            cv2.rectangle(frame_left, (x1, y1), (x2, y2), green, 2)
+            
+            # Draw bounding box midpoint circle
+            cv2.circle(frame_left, (center_x, center_y), 4, red, -1)
+            cv2.putText(frame_left, label, (x1+5, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, black, 2)  # Top Label text
+            cv2.putText(frame_left, label, (x1+5, y1+15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, white, 2)  # Bottom Label text
         
-        if depth is not None:
-            depth_text = f"{obj['depth']:.2f}m"
-            cv2.putText(frame_left, depth_text, (x1 + 5, y2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, white, 1)  # Depth below boundingbox
-    #------------------------------------------#
+            if depth is not None:
+                depth_text = f"{obj['depth']:.2f}m"
+                cv2.putText(frame_left, depth_text, (x1 + 5, y2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, white, 1)  # Depth below bounding box
+
+    # Draws 'block' if its found inside of a 'pallet' and "tunnel" is not found
+    if not tunnel_detected:
+        for obj in object_data.values():
+            # Gets all object data
+            label = obj["label"]
+            bbox, depth = obj["BoundingBox"], obj["depth"]
+            x1, y1, x2, y2 = bbox
+            center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2 
+
+            if "block" in label.lower():
+                if is_inside_blocks:
+                    cv2.rectangle(frame_left, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.circle(frame_left, (center_x, center_y), 4, (0, 0, 255), -1)
+                    cv2.putText(frame_left, label, (x1 + 5, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)  # Top Label text
+
+                    if obj["depth"] is not None:
+                        depth_text = f"{obj['depth']:.2f}m"
+                        cv2.putText(frame_left, depth_text, (x1 + 5, y2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)  # Depth below bounding box
+
+                    # Draw center circle
+                    for mid_x, mid_y in tunnel_center_points_blocks: 
+                        color = camera_offset_color if closest_tunnel_center and (mid_x, mid_y) == closest_tunnel_center else red
+                        cv2.circle(frame_left, (mid_x, mid_y), 5, color, -1)
+    # ------------------------------------------ #
 
     # ------ Draw 'x' in the center of the camera frame ------ #
     frame_center_x, frame_center_y = frame_center[0], frame_center[1]
     cv2.line(frame_left, (frame_center_x - cross_size, frame_center_y - cross_size), 
-            (frame_center_x + cross_size, frame_center_y + cross_size), purple, cross_width)
+            (frame_center_x + cross_size, frame_center_y + cross_size), camera_offset_color, cross_width)
     cv2.line(frame_left, (frame_center_x - cross_size, frame_center_y + cross_size), 
-            (frame_center_x + cross_size, frame_center_y - cross_size), purple, cross_width)
+            (frame_center_x + cross_size, frame_center_y - cross_size), camera_offset_color, cross_width)
     #---------------------------------------------------#
 
     # ------ Visualize camera offset to pallet center ------ #
-    visualization_center = closest_tunnel_center
-    if camera_offset:
-        offset_x, offset_y = camera_offset[0], camera_offset[1]
-        if visualization_center:
-            cv2.putText(frame_left, f"Offset: ({offset_x}, {offset_y}) [cm]", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, purple, 2)
-            cv2.arrowedLine(frame_left, frame_center, (visualization_center[0], frame_center_y), purple, 2, tipLength=0.2)  # X-axis arrow
-            cv2.arrowedLine(frame_left, frame_center, (frame_center_x, visualization_center[1]), purple, 2, tipLength=0.2)  # Y-axis arrow
-            # Display offset values near the arrows
-            cv2.putText(frame_left, f"X: {offset_x}", (visualization_center[0] + 10, frame_center_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, purple, 2)
-            cv2.putText(frame_left, f"Y: {offset_y}", (frame_center_x + 10, visualization_center[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, purple, 2)
+    if camera_offset and closest_tunnel_center:
+        angle_x, angle_y = angle_offset
+        height, _, _ = frame_left.shape
+        tunnel_center_x, tunnel_center_y = closest_tunnel_center
+
+        # Start and end points for the angle offsets
+        start_point_x = (frame_center_x, height)
+        end_point_x = (tunnel_center_x, tunnel_center_y)
+        start_point_y = (0, frame_center_y)
+        end_point_y = (tunnel_center_x, tunnel_center_y)
+
+        # Display the angle offset lines
+        cv2.line(frame_left, start_point_x, end_point_x, camera_offset_color, 2)
+        cv2.putText(frame_left, f"{angle_x} deg", (frame_center_x+10, height-10), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, camera_offset_color, 1, cv2.LINE_AA)
+        
+        cv2.line(frame_left, start_point_y, end_point_y, camera_offset_color, 2)
+        cv2.putText(frame_left, f"{angle_y} deg", (10, frame_center_y+2), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, camera_offset_color, 1, cv2.LINE_AA)
+
     #--------------------------------------------------------#
-
-    # ------ Pallet Tunnel Center Visualization ------ #
-    for mid_x, mid_y in tunnel_center_points:                   # Object "tunnel"
-        color = purple if visualization_center and (mid_x, mid_y) == visualization_center else blue
-        cv2.circle(frame_left, (mid_x, mid_y), 5, color, -1)
-
-    for mid_x, mid_y in tunnel_center_points_blocks:            # Object "blocks"
-        color = purple if visualization_center and (mid_x, mid_y) == visualization_center else red
-        cv2.circle(frame_left, (mid_x, mid_y), 5, color, -1)  
-    #--------------------------------------------------#
 
 # Show camera feed
 def display(frame_left, depthmap, disparitymap):
@@ -387,15 +435,18 @@ def display(frame_left, depthmap, disparitymap):
 ########################################################################
 # --------------------------- MAIN LOGIC ----------------------------- #
 camera_left, camera_right = init_cameras(LCameraID, RCameraID, width, height, brightness_value)
-set_processor(yolo_model, pallet_model, processor)
+set_processor(models, processor)
 
 # Read the first frame to calculate center of the frame
 _, frame_left = camera_left.read()
 frame_center = (frame_left.shape[1] // 2, frame_left.shape[0] // 2)     # Calculate the center of the frame
 
+# Deques to store the last 10 values
+latest_offset = deque(maxlen=smoothing)
+latest_angle_offset = deque(maxlen=smoothing)
+
 ## ---- MAIN LOOP ---- ##
 frame_time = 1 / fps
-latest_valid_offset = (None, None)
 print("Visualizing... (press 'Q' to stop)")
 while camera_left.isOpened() and camera_right.isOpened():
     _, frame_left = camera_left.read()
@@ -405,7 +456,11 @@ while camera_left.isOpened() and camera_right.isOpened():
     disparity, disparitymap = disparity_calculation(frame_left, frame_right)
 
     # Run object and pallet detection
-    all_detections = run_detection(frame_left, yolo_model, object_threshold, target_class) + run_detection(frame_left, pallet_model, pallet_threshold, target_class)
+    all_detections = []
+    for model, threshold in models:
+        # detection = run_detection(frame_left, yolo_model, object_threshold, target_class)+run_detection(frame_left, pallet_model, pallet_threshold, target_class)+run_detection(frame_left, pallets_model, pallet_threshold, target_class)
+        detection = run_detection(frame_left, model, threshold, target_class)
+        all_detections.extend(detection)
 
     # Object Depth Calculations
     object_data = depth_calculation(all_detections, disparity, camera_propeties, scale_factor)
@@ -415,14 +470,15 @@ while camera_left.isOpened() and camera_right.isOpened():
     depthmap = depth_map(disparity, camera_propeties, scale_factor)
     
     # Find pallet tunnel center
-    tunnel_center_points_blocks= find_tunnel_center_blocks(all_detections)
-    tunnel_center_points = find_tunnel_center(all_detections)
+    tunnel_center_points_blocks, is_inside_blocks= find_tunnel_center_blocks(all_detections)
+    tunnel_center_points, is_inside_tunnel = find_tunnel_center(all_detections)
 
     # Calculate camera offset to the pallet tunnel center
-    camera_offset, closest_tunnel_center = calculate_camera_offset(frame_center, tunnel_center_points, tunnel_center_points_blocks, camera_propeties, disparity)
+    camera_offset, closest_tunnel_center, camera_angle_offset = calculate_camera_offset(frame_center, tunnel_center_points, tunnel_center_points_blocks, disparity)
 
     # Visualize
-    visualization(frame_left, object_data, tunnel_center_points, frame_center, camera_offset, closest_tunnel_center, tunnel_center_points_blocks)
+    visualization(frame_left, object_data, tunnel_center_points, frame_center, camera_offset, closest_tunnel_center, tunnel_center_points_blocks, camera_angle_offset,
+                  is_inside_tunnel, is_inside_blocks)
 
     # Display figures
     display(frame_left, depthmap, disparitymap)
