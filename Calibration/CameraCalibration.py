@@ -86,7 +86,7 @@ print(f"Calculated Focal Length (Left Camera): {FOCAL_LENGTH_L} pixels")
 print(f"Calculated Focal Length (Right Camera): {FOCAL_LENGTH_R} pixels\n")
 
 # Save calibration results
-np.savez("Calibration/stereo_calibration.npz",
+np.savez("Calibration/stereo_calibration2.npz",
          mtxL=mtxL, distL=distL, 
          mtxR=mtxR, distR=distR,
          R=R, T=T, E=E, F=F,
@@ -102,7 +102,7 @@ print("Stereo Calibration done! Results saved.")
 print(f"Total images processed/denied: {proccessed_images}/{denied_images} ({proccessed_images+denied_images})")
 
 ## -- Verify Calibration -- ##
-print("\nStarting camera verification....")
+print("\nStarting camera verification (<1 ok)....")
 reprojection_error_L = cv2.calibrateCamera(objpoints, imgpointsL, grayL.shape[::-1], mtxL, distL, rvecsL, tvecsL)[0]
 reprojection_error_R = cv2.calibrateCamera(objpoints, imgpointsR, grayR.shape[::-1], mtxR, distR, rvecsR, tvecsR)[0]
 print(f"Reprojection Error (Left Camera): {reprojection_error_L}")
