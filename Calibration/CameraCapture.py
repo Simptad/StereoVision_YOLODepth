@@ -1,18 +1,16 @@
 import cv2
-import os
 import numpy as np
 import time
 
 ## -- Parameters -- ##
 # Resolution [pixels]
-width = 1920
-height = 1080
+width = 1920; height = 1080
 # Board parameters
-square_size = 3.3  # Size of one square in cm
-internal_width = 10
-internal_height = 7
+square_size = 3.3       # Size of one square in cm
+internal_width = 10     # Number of internal corners (horizontal)
+internal_height = 7     # Number of internal corners (vertical)
 # Camera parameters
-BASELINE = 39  # Distance between cameras in cm
+BASELINE = 39           # Distance between cameras in cm
 
 # Initialize cameras
 print("\nInitializing cameras....")
@@ -22,24 +20,17 @@ cameraR = cv2.VideoCapture(2, cv2.CAP_DSHOW)  # Right Camera
 print("Right camera initialized.\n")
 
 # Sets the resolution for both cameras
-if cameraL.isOpened():
-    cameraL.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-    cameraL.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-    print("Camera_L resolution set to", width, "x", height)
-else:
-    print("Left camera not detected.")
-
-if cameraR.isOpened():
-    cameraR.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-    cameraR.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-    print("Camera_R resolution set to", width, "x", height)
-else:
-    print("Right camera not detected.")
+cameraL.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+cameraL.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+cameraR.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+cameraR.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+print("Camera resolution set to", width, "x", height)
 
 image_count = 0
 image_saved_text = ""  # Text to display when an image is saved
 text_display_time = 0  # Timer to clear text
 
+# Detection and drawing function
 def detect_and_draw_chessboard_corners(image, pattern_size=(internal_width, internal_height), camera_name=""):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     ret, corners = cv2.findChessboardCorners(gray, pattern_size)
@@ -62,7 +53,7 @@ while True:
         else:
             cv2.putText(chessboard_image_L, "Not found", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
-        # Display "Image XXX saved" if applicable
+        # Display "Image XXX saved"
         if time.time() - text_display_time < 2:  # Show text for 2 seconds
             cv2.putText(chessboard_image_L, image_saved_text, (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
 
@@ -75,7 +66,7 @@ while True:
         else:
             cv2.putText(chessboard_image_R, "Not found", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
-        # Display "Image XXX saved" if applicable
+        # Display "Image XXX saved"
         if time.time() - text_display_time < 2:  # Show text for 2 seconds
             cv2.putText(chessboard_image_R, image_saved_text, (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
 
@@ -98,7 +89,7 @@ while True:
             text_display_time = time.time()  # Start timer
             image_count += 1
 
-# Release resources
+# Stop capturing
 if cameraL.isOpened():
     cameraL.release()
 if cameraR.isOpened():

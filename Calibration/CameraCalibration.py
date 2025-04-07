@@ -2,27 +2,23 @@ import cv2
 import numpy as np
 import glob
 
-## -- Load initial parameters -- ##
+# Load initial parameters
 init_data = np.load("Calibration/InitialParameters.npz")
-# CHECKERBOARD = (init_data["internal_width"], init_data["internal_length"])
-CHECKERBOARD = (10, 7)
+CHECKERBOARD = (init_data["internal_width"], init_data["internal_length"])
 BASELINE = init_data["BASELINE"]
 square_size = init_data["square_size"]
-# ------------------------------- ##
 
-## --- Load calibration images --- ##
-left_images = glob.glob("Calibration/Calibrationpictures_L/*.jpg")   # Left camera images
-right_images = glob.glob("Calibration/Calibrationpictures_R/*.jpg") # Right camera images
-# ------------------------------------#
+# Load calibration images
+left_images = glob.glob("Calibration/Calibrationpictures_L/*.jpg")
+right_images = glob.glob("Calibration/Calibrationpictures_R/*.jpg")
 
-## --- Preparing empty lists to store object points and image points from all images --- ##
+# Empty lists to store object points and image points from all images
 # Prepare object points
 objp = np.zeros((CHECKERBOARD[0] * CHECKERBOARD[1], 3), np.float32)
 objp[:, :2] = np.mgrid[0:CHECKERBOARD[0], 0:CHECKERBOARD[1]].T.reshape(-1, 2) * square_size
 objpoints = []      # 3D points in real world
 imgpointsL = []     # 2D points for left camera
 imgpointsR = []     # 2D points for right camera
-# -----------------------------------------------------------------------------------------#
 
 denied_images = 0; proccessed_images = 0
 print("\nStarting image calibration....")
@@ -34,23 +30,11 @@ for left_img, right_img in zip(left_images, right_images):
     grayL = cv2.cvtColor(imgL, cv2.COLOR_BGR2GRAY)
     grayR = cv2.cvtColor(imgR, cv2.COLOR_BGR2GRAY)
 
-    # # Optionally apply histogram equalization to enhance contrast
-    # grayL = cv2.equalizeHist(grayL)
-    # grayR = cv2.equalizeHist(grayR)
-
-    # # Optionally apply Gaussian Blur to smooth the image and reduce noise
-    # grayL = cv2.GaussianBlur(grayL, (5, 5), 0)
-    # grayR = cv2.GaussianBlur(grayR, (5, 5), 0)
-
-    # Find Checkerboard corners
-    # retL, cornersL = cv2.findChessboardCorners(grayL, CHECKERBOARD, None)
-    # retR, cornersR = cv2.findChessboardCorners(grayR, CHECKERBOARD, None)
-
-    # Better chessboard corner detection using SB
+    # Chessboard corner detection using SB
     retL, cornersL = cv2.findChessboardCornersSB(grayL, CHECKERBOARD, None)
     retR, cornersR = cv2.findChessboardCornersSB(grayR, CHECKERBOARD, None)
 
-    # Stores the 2D coordinates if corners are found in both images
+    # Stores the 2D coordinate if corners are found in both images
     if retL and retR:
         objpoints.append(objp)
         imgpointsL.append(cornersL)
@@ -60,7 +44,6 @@ for left_img, right_img in zip(left_images, right_images):
     else:
         print(f"Image {proccessed_images+denied_images} Denied.")
         denied_images += 1
-    
 print("Done\n")
 
 print("Individual Stereo Calibration...")
@@ -118,13 +101,11 @@ np.savez("Calibration/stereo_calibration.npz",
 print("Stereo Calibration done! Results saved.")
 print(f"Total images processed/denied: {proccessed_images}/{denied_images} ({proccessed_images+denied_images})")
 
-## -- Verify calibration -- ##
+## -- Verify Calibration -- ##
 print("\nStarting camera verification....")
 reprojection_error_L = cv2.calibrateCamera(objpoints, imgpointsL, grayL.shape[::-1], mtxL, distL, rvecsL, tvecsL)[0]
 reprojection_error_R = cv2.calibrateCamera(objpoints, imgpointsR, grayR.shape[::-1], mtxR, distR, rvecsR, tvecsR)[0]
-stereo_error = retS
 print(f"Reprojection Error (Left Camera): {reprojection_error_L}")
 print(f"Reprojection Error (Right Camera): {reprojection_error_R}")
-print(f"Stereo Calibration Reprojection Error: {stereo_error}")
 print("Done\n")
 
