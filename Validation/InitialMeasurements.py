@@ -82,7 +82,7 @@ plt.figure(figsize=(12, 8))
 for idx, (scaling_factor, values) in enumerate(data.items()):
     color = colors[idx]  # Assign a unique color for each scaling factor
     # Calculate and plot error values
-    errors = [true - measured for true, measured in zip(values["true"], values["measured"])]
+    errors = [measured-true for true, measured in zip(values["true"], values["measured"])]
     plt.plot(
         values["true"], errors,
         marker='o', linestyle='-', color=color, label=f"Scaling {scaling_factor}"
