@@ -69,7 +69,7 @@ plt.yticks(range(-1 + 1, y_max))  # Exclude the first and last numbers on the y-
 plt.xlabel("True Depth [m]", fontsize=18)
 plt.ylabel("Measured Depth [m]", fontsize=18)
 plt.title("True Depth vs Measured Depth for Different Scaling Factors", fontsize=18)
-plt.legend(title="Scaling Factors (Calibrated between 2-6m)", loc='upper left')
+plt.legend(title="Scaling Factors (Calibrated between 2-6m)", loc='upper left', title_fontsize=14, fontsize=14)
 plt.grid(True)
 
 # Save the first figure
@@ -103,7 +103,7 @@ plt.yticks(range(y_min + 1, 4))  # Exclude the first and last numbers on the y-a
 plt.xlabel("True Depth [m]", fontsize=18)
 plt.ylabel("Deviation [m]", fontsize=18)
 plt.title("Deviation vs True Depth for Different Scaling Factors", fontsize=18)
-plt.legend(title="Scaling Factors (Calibrated between 2-6m)", loc='upper left')
+plt.legend(title="Scaling Factors (Calibrated between 2-6m)", loc='upper left', fontsize=14, title_fontsize=14)
 plt.grid(True)
 
 # Save the second figure

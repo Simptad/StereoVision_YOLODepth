@@ -68,7 +68,7 @@ plt.xlabel('True Depth [m]', fontsize=18)
 plt.ylabel('Measured/Adjusted Depth & Deviation [m]', fontsize=18)
 plt.title('True Depth vs Measured/Adjusted Depth', fontsize=18)
 
-plt.legend()
+plt.legend(title="Scaling factor: 1.9", title_fontsize=18, fontsize=18)
 plt.grid(True)
 
 # Highlight error range
