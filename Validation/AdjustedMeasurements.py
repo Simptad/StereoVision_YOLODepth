@@ -50,7 +50,7 @@ plotrange_y = range(0, int(max_y) + 1)  # Only positive ticks for display
 # Use tab10 color scheme
 colors = plt.cm.tab10.colors
 
-plt.figure(figsize=(8, 6))
+plt.figure(figsize=(12, 8))
 
 # Plot 'Real Depth vs Measured/Adjusted Depth'
 plt.plot(meter_range, mean_measured, label='Measured', marker='o', linestyle='-', color=colors[0])
@@ -61,11 +61,11 @@ plt.plot(meter_range, mean_adjusted, label='Adjusted', marker='o', linestyle='-'
 plt.plot(meter_range, error_measured, marker='o', linestyle='-', color=colors[0])
 plt.plot(meter_range, error_adjusted, marker='o', linestyle='-', color=colors[1])
 
-plt.axhline(0, color="black", linestyle='--', label='Ideal Error')
+plt.axhline(0, color="black", linestyle='--', label='Ideal Deviation')
 
-plt.xlabel('Real Depth [m]')
+plt.xlabel('True Depth [m]')
 plt.ylabel('Measured/Adjusted Depth & Deviation [m]')
-plt.title('Real Depth vs Measured/Adjusted Depth')
+plt.title('True Depth vs Measured/Adjusted Depth')
 
 plt.legend()
 plt.grid(True)
@@ -79,7 +79,7 @@ plt.axhspan(
 plt.text(
     x=1.5,
     y=-2.3,
-    s="Error Range",
+    s="Deviation Range",
     fontsize=12,
     color=colors[3],
     bbox=dict(facecolor='white', alpha=0.7, edgecolor=colors[3])
@@ -116,6 +116,8 @@ plt.ylim(min_y - 1, max_y + 1)  # Keep the y-axis range fixed to the current vis
 plt.plot(meter_range, mean_measured, label='Measured', marker='o', linestyle='-', color=colors[0])
 plt.plot(meter_range, mean_adjusted, label='Adjusted', marker='o', linestyle='-', color=colors[1])
 plt.plot([0, 15], [0, 15], linestyle='--', color="black", label='Ideal Depth')  # Extend the line to 15
+
+plt.tight_layout()  # Automatically adjust subplot parameters to fit the figure
 
 plt.savefig("Validation/figures/AdjustedMeasurements.png")
 plt.show()
