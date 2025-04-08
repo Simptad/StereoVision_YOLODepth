@@ -30,7 +30,7 @@ with open(file_path, 'r') as f:
                 print(f"Skipping invalid line: {line}")
 
 # Configuration for x and y axes
-x_min, x_max = -1, 11  # Set x-axis range
+x_min, x_max = 0, 11  # Set x-axis range
 y_min, y_max = -4, 13  # Set y-axis range
 y_ticks = range(y_min, y_max + 1)  # Set y-axis ticks
 
@@ -105,9 +105,9 @@ plt.xticks(range(x_min + 1, x_max))  # Exclude the first and last numbers on the
 plt.yticks(range(y_min + 1, y_max), [abs(y) for y in range(y_min + 1, y_max)])  # Exclude the first and last numbers on the y-axis as absolute values
 
 # Add labels, title, and legend
-plt.xlabel("True Depth [m]")
-plt.ylabel("Measured Depth & Deviation [m]")
-plt.title("True Depth vs Measured Depth for Different Scaling Factors")
+plt.xlabel("True Depth [m]", fontsize=18)
+plt.ylabel("Measured Depth & Deviation [m]", fontsize=18)
+plt.title("True Depth vs Measured Depth for Different Scaling Factors", fontsize=18)
 plt.legend(title="Scaling Factors (Calibrated between 2-6m)", loc='upper left')
 plt.grid(True)
 

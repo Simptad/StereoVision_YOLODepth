@@ -53,6 +53,7 @@ colors = plt.cm.tab10.colors
 plt.figure(figsize=(12, 8))
 
 # Plot 'Real Depth vs Measured/Adjusted Depth'
+plt.legend(title="Scaling factor: 1.9")
 plt.plot(meter_range, mean_measured, label='Measured', marker='o', linestyle='-', color=colors[0])
 plt.plot(meter_range, mean_adjusted, label='Adjusted', marker='o', linestyle='-', color=colors[1])
 # plt.plot([0, 15], [0, 15], linestyle='--', color="black", label='Ideal Depth')  # Extend the line to 15
@@ -63,9 +64,9 @@ plt.plot(meter_range, error_adjusted, marker='o', linestyle='-', color=colors[1]
 
 plt.axhline(0, color="black", linestyle='--', label='Ideal Deviation')
 
-plt.xlabel('True Depth [m]')
-plt.ylabel('Measured/Adjusted Depth & Deviation [m]')
-plt.title('True Depth vs Measured/Adjusted Depth')
+plt.xlabel('True Depth [m]', fontsize=18)
+plt.ylabel('Measured/Adjusted Depth & Deviation [m]', fontsize=18)
+plt.title('True Depth vs Measured/Adjusted Depth', fontsize=18)
 
 plt.legend()
 plt.grid(True)
@@ -89,15 +90,15 @@ plt.text(
 plt.axhspan(
     ymin=0,
     ymax=max(max(mean_measured), max(mean_adjusted))+1,
-    color=colors[4], alpha=0.1
+    color="green", alpha=0.1
 )
 plt.text(
     x=6.7,
     y=3.7,
     s="Depth Range",
     fontsize=12,
-    color=colors[4],
-    bbox=dict(facecolor='white', alpha=0.7, edgecolor=colors[4])
+    color="green",
+    bbox=dict(facecolor='white', alpha=0.7, edgecolor="green")
 )
 
 plt.xticks(plotrange_x)
