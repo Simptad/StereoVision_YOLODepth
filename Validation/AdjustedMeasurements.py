@@ -47,20 +47,21 @@ max_y = max(max(mean_measured), max(mean_adjusted), max(error_measured), max(err
 plotrange_x = range(0, max(meter_range) + 1)
 plotrange_y = range(0, int(max_y) + 1)  # Only positive ticks for display
 
+# Use tab10 color scheme
+colors = plt.cm.tab10.colors
+
 plt.figure(figsize=(8, 6))
 
 # Plot 'Real Depth vs Measured/Adjusted Depth'
-plt.plot(meter_range, mean_measured, label='Measured', marker='o', linestyle='-', color='b')
-plt.plot(meter_range, mean_adjusted, label='Adjusted', marker='o', linestyle='-', color='r')
-plt.plot([0, 10], [0, 10], linestyle=':', color='black', label='Ideal Depth')
-plt.legend()
-plt.grid(True)
+plt.plot(meter_range, mean_measured, label='Measured', marker='o', linestyle='-', color=colors[0])
+plt.plot(meter_range, mean_adjusted, label='Adjusted', marker='o', linestyle='-', color=colors[1])
+# plt.plot([0, 15], [0, 15], linestyle='--', color="black", label='Ideal Depth')  # Extend the line to 15
 
 # Plot 'Deviation' (unchanged)
-plt.plot(meter_range, error_measured, marker='o', linestyle='-', color='b')
-plt.plot(meter_range, error_adjusted, marker='o', linestyle='-', color='r')
+plt.plot(meter_range, error_measured, marker='o', linestyle='-', color=colors[0])
+plt.plot(meter_range, error_adjusted, marker='o', linestyle='-', color=colors[1])
 
-plt.axhline(0, color='black', linestyle='--', label='Ideal Error')
+plt.axhline(0, color="black", linestyle='--', label='Ideal Error')
 
 plt.xlabel('Real Depth [m]')
 plt.ylabel('Measured/Adjusted Depth & Deviation [m]')
@@ -73,30 +74,30 @@ plt.grid(True)
 plt.axhspan(
     ymin=min(error_measured + error_adjusted)-1,
     ymax=max(error_measured + error_adjusted),
-    color='red', alpha=0.1
+    color=colors[3], alpha=0.1
 )
 plt.text(
     x=1.5,
     y=-2.3,
     s="Error Range",
     fontsize=12,
-    color='red',
-    bbox=dict(facecolor='white', alpha=0.7, edgecolor='red')
+    color=colors[3],
+    bbox=dict(facecolor='white', alpha=0.7, edgecolor=colors[3])
 )
 
 # Highlight depth range
 plt.axhspan(
     ymin=0,
     ymax=max(max(mean_measured), max(mean_adjusted))+1,
-    color='green', alpha=0.1
+    color=colors[4], alpha=0.1
 )
 plt.text(
     x=6.7,
     y=3.7,
     s="Depth Range",
     fontsize=12,
-    color='green',
-    bbox=dict(facecolor='white', alpha=0.7, edgecolor='green')
+    color=colors[4],
+    bbox=dict(facecolor='white', alpha=0.7, edgecolor=colors[4])
 )
 
 plt.xticks(plotrange_x)
@@ -107,7 +108,14 @@ plt.yticks(
     [abs(y) for y in range(int(min_y), int(max_y) + 1)]  # Display absolute values
 )
 
-plt.savefig("Validation/figures/RealvsMeasuredDepth")
+# Set fixed x-axis and y-axis limits
+plt.xlim(0, 11)  # Keep the x-axis range fixed to the current visible area
+plt.ylim(min_y - 1, max_y + 1)  # Keep the y-axis range fixed to the current visible area
+
+# Plot 'Real Depth vs Measured/Adjusted Depth'
+plt.plot(meter_range, mean_measured, label='Measured', marker='o', linestyle='-', color=colors[0])
+plt.plot(meter_range, mean_adjusted, label='Adjusted', marker='o', linestyle='-', color=colors[1])
+plt.plot([0, 15], [0, 15], linestyle='--', color="black", label='Ideal Depth')  # Extend the line to 15
+
+plt.savefig("Validation/figures/AdjustedMeasurements.png")
 plt.show()
-
-
