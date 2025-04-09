@@ -62,7 +62,7 @@ plt.plot(meter_range, mean_adjusted, label='Adjusted', marker='o', linestyle='-'
 plt.plot(meter_range, error_measured, marker='o', linestyle='-', color=colors[0])
 plt.plot(meter_range, error_adjusted, marker='o', linestyle='-', color=colors[1])
 
-plt.axhline(0, color="black", linestyle='--', label='Ideal Deviation')
+plt.axhline(0, color="black", linestyle='--', label='Ideal')
 
 plt.xlabel('True Depth [m]', fontsize=18)
 plt.ylabel('Measured/Adjusted Depth & Deviation [m]', fontsize=18)
