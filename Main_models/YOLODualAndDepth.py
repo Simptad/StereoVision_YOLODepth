@@ -52,7 +52,7 @@ target_class = ["person", "block", "tunnel", "pallet"]          # Classes pallet
 # target_class = None                                           # Use this to detect all objects.
 
 # Camera
-LCameraID = 1; RCameraID = 2    # Set camera ID (0 is for laptop camera, >0 is for external cameras)
+LCameraID = 0; RCameraID = 2    # Set camera ID (0 is for laptop camera, >0 is for external cameras)
 brightness_value = 120          # (0-255)
 width = 720; height = width     # Resolution [pixels]
 
