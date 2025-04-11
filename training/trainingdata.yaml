@@ -1,9 +1,0 @@
-
-
-# train: datasets\palletbox\images\train
-train: datasets\images\train
-val: datasets\images\val
-# val: datasets\palletbox\images\val
-
-nc: 2  # number of classes
-names: ['block', 'tunnel']
