@@ -9,6 +9,7 @@ camera_offset_color = (255, 0, 255)
 # Visualization
 def visualization(frame_left, object_data, tunnel_center_points, frame_center, camera_offset, closest_tunnel_center, tunnel_center_points_blocks, angle_offset,
                   is_inside_tunnel, is_inside_blocks, tunnel_coords):
+    
     # ------ Bounding box visualization ------ #
     tunnel_detected = False
 
@@ -116,7 +117,7 @@ def visualization(frame_left, object_data, tunnel_center_points, frame_center, c
     #--------------------------------------------------------#
 
 # Show camera feed
-def display(frame_left, depthmap, disparitymap):
+def display(frame_left, disparitymap):
         
         # Show camera feed
         cv2.imshow("Disparity Map", disparitymap)

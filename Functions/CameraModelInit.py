@@ -2,8 +2,9 @@ import cv2
 import math
 
 # Initialize Cameras
-def init_cameras(LCameraID, RCameraID, bvalue, width, height):
-    
+def init_cameras(CameraID, bvalue, width, height):
+    LCameraID, RCameraID = CameraID
+
     print("\t\033[93mInitializing cameras..\033[0m")
     camera_left = cv2.VideoCapture(LCameraID, cv2.CAP_DSHOW)
     camera_right = cv2.VideoCapture(RCameraID, cv2.CAP_DSHOW)

@@ -71,7 +71,7 @@ def MainLogic(camera_left, camera_right, frame_center, HorVert_FoV, map_new):
                     is_inside_tunnel, is_inside_blocks, tunnel_coords)
 
         # Display figures
-        display(frame_left, _, disparitymap)
+        display(frame_left, disparitymap)
 
         # Breaks out of the loop when pressing 'Q' and stopping code
         if cv2.waitKey(int(frame_time * 1000)) & 0xFF == ord('q'):

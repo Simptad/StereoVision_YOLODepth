@@ -11,6 +11,7 @@ def calculate_camera_offset(frame_center, tunnel_center_points, tunnel_center_po
     else:
         closest_tunnel_center, closest_disp = None, 0
 
+    # Filtering
     if 0 < closest_disp < 255: 
         valid_disp = closest_disp 
     else: 
