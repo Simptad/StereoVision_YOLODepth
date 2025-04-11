@@ -2,9 +2,8 @@
 __pycache__/
 *.pyc
 
-# Ignore RectificationTest.py
-RectificationTest.py
+# Ignore misc
+Misc/
 
-# Ignore folder Main_models
-Main_models/
+
 
