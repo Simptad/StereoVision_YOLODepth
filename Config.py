@@ -20,8 +20,7 @@ models = [
 target_class = None  # detect all
 
 # ------------------ Camera ------------------ #
-LCameraID = 0
-RCameraID = 0
+CameraID = (0, 0)               # Camera IDs for left and right cameras
 brightness_value = 120
 width = 960
 height = 540
