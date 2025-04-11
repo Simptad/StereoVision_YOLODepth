@@ -21,7 +21,9 @@ from Functions.resize_calibration import resize_calibration
 
 def initialize_system():
     print("\n\033[93mInitializing system..\033[0m")
-    camera_left, camera_right, frame_center = init_cameras(Config.LCameraID, Config.RCameraID, Config.brightness_value, Config.width, Config.height)
+
+    # Initialize cameras and set processor
+    camera_left, camera_right, frame_center = init_cameras(Config.CameraID, Config.brightness_value, Config.width, Config.height)
     set_processor(Config.models, Config.processor, Config.fps)
 
     # Calculate the cameras horizontal and vertical field of view.
