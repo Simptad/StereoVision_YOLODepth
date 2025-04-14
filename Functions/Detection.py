@@ -1,3 +1,13 @@
+# ------------------------------------------------------------------------
+# This function performs object detection using a YOLO model.
+# In this case it uses YOLOv11 and two pretrained custom models (pallets + pallet tunnel and pallet blocks)
+
+# It returns the bounding boxes of detected objects, their labels, and class IDs.
+
+
+
+# ------------------------------------------------------------------------
+
 # Object Detection
 def run_detection(frame, model, conf_threshold, target_class):
     results = model(frame)

@@ -1,4 +1,12 @@
+# ------------------------------------------------------------------------
+# This function calculates the camera angle offset from the frame center to the closest pallet tunnel.
+# The tunnel center can either be calculated from the detection of 'tunnel' or 'blocks'.
 
+# It returns the camera offset, the closest tunnel center, and the camera angle offset.
+
+
+
+# ------------------------------------------------------------------------
 # Calculates the camera offset from the frame center to the closest pallet tunnel
 def calculate_camera_offset(frame_center, tunnel_center_points, tunnel_center_points_blocks, disparity, HorVert_FoV, width, height):
     horizontal_fov, vertical_fov = HorVert_FoV

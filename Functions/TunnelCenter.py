@@ -1,3 +1,12 @@
+# ------------------------------------------------------------------------
+# This script finds the tunnel center from the detection of pallet "tunnel" and "block".
+# It checks if the center of the "tunnel" or "block" is inside of a pallet bounding box.
+
+# It returns the tunnel center points, whether they are inside the pallet, and the coordinates of the detected pallets.
+
+
+
+# ------------------------------------------------------------------------
 # Checks if the center of "tunnel" or "block" is inside of pallet
 def is_inside(center, detection):
     cx, cy = center

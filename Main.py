@@ -7,9 +7,7 @@
 # to achieve depth estimation and object tracking.
 # --------------------------------------------------------------- #
 
-import time
-import cv2
-import Config
+import time; import cv2; import Config
 from Functions.CameraModelInit import init_cameras, set_processor, calculate_fov
 from Functions.Disparity import disparity_calculation
 from Functions.Detection import run_detection

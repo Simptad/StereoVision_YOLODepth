@@ -1,3 +1,13 @@
+# ------------------------------------------------------------------------
+# This function calculates the depth of detected objects in a stereo camera setup.
+
+# It returns each object's bounding box, depth, label, and last seen time.
+
+
+
+
+# ------------------------------------------------------------------------
+# Imports
 import numpy as np
 import time
 

@@ -1,3 +1,13 @@
+# ------------------------------------------------------------------------
+# This script initializes the cameras and sets the processor for the models.
+# It also calculates the camera's horizontal and vertical field of view based on the diagonal field of view and the camera resolution.
+
+# It returns the initialized cameras, the frame center, and the calculated field of view.
+
+
+
+# ------------------------------------------------------------------------
+# Imports
 import cv2
 import math
 

@@ -1,3 +1,13 @@
+# ------------------------------------------------------------------------
+# This functions calculates the disparity map between two stereo images using the StereoSGBM algorithm.
+# It undistorts and rectifies the images, converts them to grayscale, and computes the disparity map.
+
+
+# It returns the disparity map, the color-mapped disparity image, and the rectified images.
+
+
+# ------------------------------------------------------------------------
+# Imports
 import cv2
 import numpy as np
 

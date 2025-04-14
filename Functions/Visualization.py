@@ -1,3 +1,13 @@
+# ------------------------------------------------------------------------
+# This script visualizes the bounding boxes, center points, and camera angle offset in the left camera frame.
+# It also shows the disparity map.
+
+
+
+
+
+# ------------------------------------------------------------------------
+# Imports
 import cv2
 
 # Visualization colors

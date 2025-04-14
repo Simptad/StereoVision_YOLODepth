@@ -1,3 +1,13 @@
+# ------------------------------------------------------------------------
+# This function resizes the calibration data for stereo cameras to match the target image size.
+
+# It returns the resized intrinsic matrices, undistort-rectify maps, and the Q matrix.
+
+
+
+
+# ------------------------------------------------------------------------
+# Imports
 import cv2
 import numpy as np
 
